@@ -1,0 +1,25 @@
+{
+  "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
+  "AlternatePackageNames": [ "Slimsy" ],
+  "AuthorDetails": {
+    "Name": "Jeavon Leopold",
+    "Description": "Umbraco MVP, CMS and documentation contributor",
+    "Url": "https://github.com/Jeavon",
+    "ImageUrl": "https://github.com/jeavon.png",
+    "Contributors": [
+      {
+        "Name": "Marc Stöcker",
+        "Url": "https://github.com/MarcStoecker"
+      },
+      {
+        "Name": "William Phillips",
+        "Url": "https://github.com/Will-i-am-"
+      }
+    ]
+  },
+  "Category": "Developer Tools",
+  "IssueTrackerUrl": "https://github.com/Jeavon/Slimsy/issues",
+  "LicenseTypes": [ "Free" ],
+  "PackageType": "Package",
+  "Tags": [ "Responsive Images", "Responsive", "Image", "Images", "Picture", "Lazy Load" ]
+}

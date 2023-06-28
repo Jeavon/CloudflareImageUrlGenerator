@@ -1,0 +1,14 @@
+
+.vs/
+
+*.user
+
+# Build results
+
+[Dd]ebug/
+[Rr]elease/
+x64/
+build/tools/
+[Oo]bj/
+node_modules/
+
