@@ -17,7 +17,7 @@
     <FileVersion>1.0.0.0</FileVersion>
     <InformationalVersion>1.0.0.0-alpha.0</InformationalVersion>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
-    <PackageIcon>slimsy.png</PackageIcon>
+    <PackageIcon>cloudflareimageurlgenerator.png</PackageIcon>
     <PackageProjectUrl>https://github.com/Jeavon/CloudflareImageUrlGenerator</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Jeavon/CloudflareImageUrlGenerator</RepositoryUrl>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
@@ -33,7 +33,7 @@
       <Pack>True</Pack>
       <PackagePath></PackagePath>
     </None>
-    <None Include="../../slimsy.png">
+    <None Include="../../cloudflareimageurlgenerator.png">
       <Pack>True</Pack>
       <PackagePath></PackagePath>
     </None>
