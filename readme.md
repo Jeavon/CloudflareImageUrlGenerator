@@ -20,6 +20,7 @@ NuGet Package: [![MyGet build](https://img.shields.io/myget/umbraco-packages/vpr
 
 ```c#
 services.AddUnique<IImageUrlGenerator, HybridCloudflareImageSharpImageUrlGenerator>();
+```
 
 ### 3. Enable Image Resizing on Cloudflare
 
