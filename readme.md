@@ -19,9 +19,42 @@ NuGet Package: [![MyGet build](https://img.shields.io/myget/umbraco-packages/vpr
 ### 2. Add to Startup.cs in the ConfigureServices method
 
 ```c#
-services.AddUnique<IImageUrlGenerator, HybridCloudflareImageSharpImageUrlGenerator>();
+.AddCloudflareImageUrlGenerator()
+```
+
+e.g.
+
+```c#
+services.AddUmbraco(_env, _config)
+  .AddBackOffice()
+  .AddWebsite()
+	.AddComposers()
+	.AddSlimsy()
+	.AddAzureBlobMediaFileSystem()
+	.AddCloudflareImageUrlGenerator()
+	.Build();
 ```
 
 ### 3. Enable Image Resizing on Cloudflare
 
 https://developers.cloudflare.com/images/image-resizing/enable-image-resizing/
+
+### 4. Optionally disable the generator for local development
+
+In appsettings.json
+
+```json
+	"CloudflareImageUrlGenerator": {
+		"Enabled": false
+	}
+```
+
+Then in appsettings.production.json
+
+```json
+	"CloudflareImageUrlGenerator": {
+		"Enabled": true
+	}
+```
+
+Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` for environments with Cloudflare
