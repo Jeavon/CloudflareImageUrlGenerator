@@ -20,6 +20,7 @@
     <PackageIcon>slimsy.png</PackageIcon>
     <PackageProjectUrl>https://github.com/Jeavon/CloudflareImageUrlGenerator</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Jeavon/CloudflareImageUrlGenerator</RepositoryUrl>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>
