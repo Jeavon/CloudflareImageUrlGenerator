@@ -3,7 +3,7 @@ using Microsoft.Extensions.Primitives;
 using SixLabors.ImageSharp.Web.Processors;
 using Umbraco.Cms.Core.Media;
 using Umbraco.Cms.Core.Models;
-using Umbraco.Cms.Web.Common.Media;
+using Umbraco.Cms.Imaging.ImageSharp.Media;
 
 namespace CloudflareImageUrlGenerator
 {
