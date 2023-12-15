@@ -58,36 +58,31 @@ namespace CloudflareImageUrlGenerator
                 options.ImageCropMode = ImageCropMode.Crop;
             }
 
+            var cfCropModeCommandValue = "";
             if (options.ImageCropMode is not null)
             {
-                var cfCropModeComamndValue = "";
-
-                switch (options.ImageCropMode)
+                cfCropModeCommandValue = options.ImageCropMode switch
                 {
-                    case ImageCropMode.Crop:
-                        cfCropModeComamndValue = CloudflareCommands.Crop;
-                        break;
-                    case ImageCropMode.Pad:
-                        cfCropModeComamndValue = CloudflareCommands.Pad;
-                        break;
-                    case ImageCropMode.Max:
-                        cfCropModeComamndValue = CloudflareCommands.Cover;
-                        break;
-                    case ImageCropMode.Min:
-                        cfCropModeComamndValue = CloudflareCommands.Contain;
-                        break;
-                    case ImageCropMode.Stretch:
+                    ImageCropMode.Crop => CloudflareCommands.Crop,
+                    ImageCropMode.Pad => CloudflareCommands.Pad,
+                    ImageCropMode.Max => CloudflareCommands.Cover,
+                    ImageCropMode.Min => CloudflareCommands.Contain,
+                    ImageCropMode.Stretch =>
                         // not supported
-                        cfCropModeComamndValue = CloudflareCommands.Cover;
-                        break;
-                    case ImageCropMode.BoxPad:
+                        CloudflareCommands.Cover,
+                    ImageCropMode.BoxPad =>
                         // not supported
-                        cfCropModeComamndValue = CloudflareCommands.Pad;
-                        break;
-                }
-
-                cfCommands.Add(CloudflareCommands.Fit, cfCropModeComamndValue.ToLowerInvariant());
+                        CloudflareCommands.Pad,
+                    _ => cfCropModeCommandValue
+                };
             }
+            else
+            {
+                cfCropModeCommandValue = CloudflareCommands.Crop;
+            }
+
+            cfCommands.Add(CloudflareCommands.Fit, cfCropModeCommandValue.ToLowerInvariant());
+            
 
             if (options.FocalPoint is not null)
             {
