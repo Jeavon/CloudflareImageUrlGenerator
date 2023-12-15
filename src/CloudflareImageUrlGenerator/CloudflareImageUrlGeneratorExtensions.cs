@@ -19,7 +19,14 @@ namespace CloudflareImageUrlGenerator
 
             if (cloudflareImageUrlGeneratorOptions.Enabled)
             {
-                builder.Services.AddUnique<IImageUrlGenerator, HybridCloudflareImageSharpImageUrlGenerator>();
+                if (cloudflareImageUrlGeneratorOptions.Mode == "full")
+                {
+                    builder.Services.AddUnique<IImageUrlGenerator, CloudflareImageUrlGenerator>();
+                }
+                else
+                {
+                    builder.Services.AddUnique<IImageUrlGenerator, HybridCloudflareImageSharpImageUrlGenerator>();
+                }
             }
             return builder;
         }
