@@ -95,12 +95,12 @@ namespace CloudflareImageUrlGenerator
                // queryString.Add(ResizeWebProcessor.Anchor, options.ImageCropAnchor.ToString()?.ToLowerInvariant());
             }
 
-            if (options.Width is not null)
+            if (options.Width is not null && options.Width > 0)
             {
                cfCommands.Add(CloudflareCommands.Width, options.Width?.ToString(CultureInfo.InvariantCulture));
             }
 
-            if (options.Height is not null)
+            if (options.Height is not null && options.Height > 0)
             {
                 cfCommands.Add(CloudflareCommands.Height, options.Height?.ToString(CultureInfo.InvariantCulture));
             }
