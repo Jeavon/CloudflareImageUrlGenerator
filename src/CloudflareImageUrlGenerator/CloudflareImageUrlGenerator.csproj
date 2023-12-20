@@ -23,7 +23,12 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Umbraco.Cms.Imaging.ImageSharp" Version="13.0.0" />
+    <PackageReference Include="Umbraco.Cms.Web.Website" Version="13.0.0" />
+    <PackageReference Include="Umbraco.Cms.Web.BackOffice" Version="13.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net7.0'">
     <PackageReference Include="Umbraco.Cms.Imaging.ImageSharp" Version="12.0.0" />
     <PackageReference Include="Umbraco.Cms.Web.Website" Version="12.0.0" />
     <PackageReference Include="Umbraco.Cms.Web.BackOffice" Version="12.0.0" />
