@@ -1,5 +1,8 @@
 ﻿using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+using SixLabors.ImageSharp.Web;
+using SixLabors.ImageSharp.Web.Middleware;
 using SixLabors.ImageSharp.Web.Processors;
 using Umbraco.Cms.Core.Media;
 using Umbraco.Cms.Core.Models;
@@ -13,11 +16,16 @@ namespace CloudflareImageUrlGenerator
  
         public IEnumerable<string> SupportedImageFileTypes { get; }
         private SixLabors.ImageSharp.Configuration _configuration { get; }
+        private RequestAuthorizationUtilities _requestAuthorizationUtilities { get; }
+        private IOptions<ImageSharpMiddlewareOptions> _imageSharpMiddlewareOptions { get; }
 
-        public HybridCloudflareImageSharpImageUrlGenerator(SixLabors.ImageSharp.Configuration configuration) {
+        public HybridCloudflareImageSharpImageUrlGenerator(SixLabors.ImageSharp.Configuration configuration, RequestAuthorizationUtilities requestAuthorizationUtilities, IOptions<ImageSharpMiddlewareOptions> imageSharpMiddlewareOptions)
+        {
 
             SupportedImageFileTypes = configuration.ImageFormats.SelectMany(f => f.FileExtensions).ToArray();
             _configuration = configuration;
+            _requestAuthorizationUtilities = requestAuthorizationUtilities;
+            _imageSharpMiddlewareOptions = imageSharpMiddlewareOptions;
         }
      
         public string? GetImageUrl(ImageUrlGenerationOptions? options)
@@ -29,7 +37,7 @@ namespace CloudflareImageUrlGenerator
 
             var cfCommands = new Dictionary<string, string?>();
             Uri fakeBaseUri = new Uri("https://localhost/");
-            var imageSharpString = new ImageSharpImageUrlGenerator(_configuration).GetImageUrl(options);
+            var imageSharpString = new ImageSharpImageUrlGenerator(_configuration,_requestAuthorizationUtilities,_imageSharpMiddlewareOptions).GetImageUrl(options);
 
             Dictionary<string, StringValues> imageSharpCommands = QueryHelpers.ParseQuery(new Uri(fakeBaseUri, imageSharpString).Query);
 
