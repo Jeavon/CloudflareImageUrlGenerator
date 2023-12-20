@@ -18,16 +18,14 @@ namespace CloudflareImageUrlGenerator
         private SixLabors.ImageSharp.Configuration _configuration { get; }
         private RequestAuthorizationUtilities _requestAuthorizationUtilities { get; }
         private IOptions<ImageSharpMiddlewareOptions> _imageSharpMiddlewareOptions { get; }
-        private ImageSharpImageUrlGenerator _imageSharpImageUrlGenerator { get; }
 
-        public HybridCloudflareImageSharpImageUrlGenerator(ImageSharpImageUrlGenerator imageSharpImageUrlGenerator, SixLabors.ImageSharp.Configuration configuration, RequestAuthorizationUtilities requestAuthorizationUtilities, IOptions<ImageSharpMiddlewareOptions> imageSharpMiddlewareOptions)
+        public HybridCloudflareImageSharpImageUrlGenerator(SixLabors.ImageSharp.Configuration configuration, RequestAuthorizationUtilities requestAuthorizationUtilities, IOptions<ImageSharpMiddlewareOptions> imageSharpMiddlewareOptions)
         {
 
             SupportedImageFileTypes = configuration.ImageFormats.SelectMany(f => f.FileExtensions).ToArray();
             _configuration = configuration;
             _requestAuthorizationUtilities = requestAuthorizationUtilities;
             _imageSharpMiddlewareOptions = imageSharpMiddlewareOptions;
-            _imageSharpImageUrlGenerator = imageSharpImageUrlGenerator;
         }
      
         public string? GetImageUrl(ImageUrlGenerationOptions? options)
@@ -40,7 +38,6 @@ namespace CloudflareImageUrlGenerator
             var cfCommands = new Dictionary<string, string?>();
             Uri fakeBaseUri = new Uri("https://localhost/");
             var imageSharpString = new ImageSharpImageUrlGenerator(_configuration,_requestAuthorizationUtilities,_imageSharpMiddlewareOptions).GetImageUrl(options);
-            var test = _imageSharpImageUrlGenerator.GetImageUrl(options);
 
             Dictionary<string, StringValues> imageSharpCommands = QueryHelpers.ParseQuery(new Uri(fakeBaseUri, imageSharpString).Query);
 
