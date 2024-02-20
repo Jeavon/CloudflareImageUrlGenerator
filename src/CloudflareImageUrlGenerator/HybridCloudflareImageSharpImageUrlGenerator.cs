@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using SixLabors.ImageSharp.Web.Processors;
 using Umbraco.Cms.Core.Media;
@@ -9,15 +10,15 @@ namespace CloudflareImageUrlGenerator
 {
     public sealed class HybridCloudflareImageSharpImageUrlGenerator : IImageUrlGenerator 
     {
-        public IEnumerable<string> CloudFlareSupportedImageFileTypes { get; } = (new string[]{"webp", "avif"}).ToList();
- 
         public IEnumerable<string> SupportedImageFileTypes { get; }
         private SixLabors.ImageSharp.Configuration _configuration { get; }
 
-        public HybridCloudflareImageSharpImageUrlGenerator(SixLabors.ImageSharp.Configuration configuration) {
+        private readonly CloudflareImageUrlGeneratorOptions _cloudflareImageUrlGeneratorOptions;
+        public HybridCloudflareImageSharpImageUrlGenerator(SixLabors.ImageSharp.Configuration configuration, IOptionsMonitor<CloudflareImageUrlGeneratorOptions> cloudflareImageUrlGeneratorOptions) {
 
             SupportedImageFileTypes = configuration.ImageFormats.SelectMany(f => f.FileExtensions).ToArray();
             _configuration = configuration;
+            _cloudflareImageUrlGeneratorOptions = cloudflareImageUrlGeneratorOptions.CurrentValue;
         }
      
         public string? GetImageUrl(ImageUrlGenerationOptions? options)
@@ -36,13 +37,18 @@ namespace CloudflareImageUrlGenerator
             // remove format from ImageSharp and add it to Cloudflare, additionally set ImageSharp quality to 100 (as source) and add quality parameter to Cloudflare 
             if (imageSharpCommands.Remove(FormatWebProcessor.Format, out StringValues format))
             {
-                if (CloudFlareSupportedImageFileTypes.Contains(format[0]))
+                if (_cloudflareImageUrlGeneratorOptions.CloudFlareSupportedImageFileTypes.Contains(format[0]))
                 {
-                    var quality = imageSharpCommands[QualityWebProcessor.Quality];
-                    imageSharpCommands[QualityWebProcessor.Quality] = "100";
                     cfCommands.Add(FormatWebProcessor.Format, format[0]);
-                    cfCommands.Add(QualityWebProcessor.Quality, quality);
-                } else
+
+                    if (imageSharpCommands.ContainsKey(QualityWebProcessor.Quality))
+                    {
+                        var quality = imageSharpCommands[QualityWebProcessor.Quality];
+                        imageSharpCommands[QualityWebProcessor.Quality] = "100";
+                        cfCommands.Add(QualityWebProcessor.Quality, quality);
+                    }
+                }
+                else
                 {
                     return imageSharpString;
                 }
