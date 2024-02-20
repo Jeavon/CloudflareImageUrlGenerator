@@ -71,3 +71,17 @@ Then in appsettings.production.json
 ```
 
 Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` for environments with Cloudflare
+
+### Further Options (v2.0.1+)
+
+By default the provider offloads conversion of webp and avif file types, you can configure further types, check they are supported outpput types https://developers.cloudflare.com/images/image-resizing/format-limitations/
+
+e.g.
+
+```json
+	"CloudflareImageUrlGenerator": {
+		"Enabled": true,
+		"CloudFlareSupportedImageFileTypes": ["webp", "avif", "jpg", "png"]
+	}
+```
+
