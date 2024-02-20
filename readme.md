@@ -14,7 +14,7 @@ dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 1.0.0
 This Url Generator will **not work with the HMACSecretKey** due to the path being different so ensure that's not enabled
 
 ```
-dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.0.0
+dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.0.1
 ```
 
 __Release Downloads__
@@ -74,7 +74,7 @@ Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` 
 
 ### Further Options (v2.0.1+)
 
-By default the provider offloads conversion of webp and avif file types, you can configure further types, check they are supported outpput types https://developers.cloudflare.com/images/image-resizing/format-limitations/
+By default the provider offloads conversion of webp and avif file types, you can configure further types, check they are supported output types https://developers.cloudflare.com/images/image-resizing/format-limitations/
 
 e.g.
 
