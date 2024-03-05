@@ -73,6 +73,13 @@ namespace CloudflareImageUrlGenerator
                         cfCommands.Add(QualityWebProcessor.Quality, quality);
                     }
 
+                    if (options.FocalPoint is not null)
+                    {
+                        cfCommands.Add("gravity", FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
+                        cfCommands.Add("fit", "crop");
+                    }
+
+
                 }
                 else
                 {
