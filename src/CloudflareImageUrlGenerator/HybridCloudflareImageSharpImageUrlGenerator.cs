@@ -46,22 +46,36 @@ namespace CloudflareImageUrlGenerator
                 if (_cloudflareImageUrlGeneratorOptions.CloudFlareSupportedImageFileTypes.Contains(format[0]))
                 {
                     var addFit = false;
-                    if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
+
+                    // only offload crop mode resizing for now
+                    if (options.ImageCropMode is null or ImageCropMode.Crop)
                     {
-                        if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                        if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
                         {
-                            cfCommands.Add("w", width);
-                            addFit = true;
-                        }
-                    }
-                    if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Height))
-                    {
-                        if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
-                        {
-                            var h = Convert.ToInt32(height);
-                            if (h > 0)
+                            if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
                             {
-                                cfCommands.Add("h", h.ToString());
+                                cfCommands.Add("w", width);
+                                addFit = true;
+                            }
+                        }
+                        if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Height))
+                        {
+                            if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
+                            {
+                                var h = Convert.ToInt32(height);
+                                if (h > 0)
+                                {
+                                    cfCommands.Add("h", h.ToString());
+                                    addFit = true;
+                                }
+                            }
+                        }
+
+                        if (options.FocalPoint is not null)
+                        {
+                            if (imageSharpCommands.Remove(ResizeWebProcessor.Xy))
+                            {
+                                cfCommands.Add("gravity", FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
                                 addFit = true;
                             }
                         }
@@ -74,12 +88,6 @@ namespace CloudflareImageUrlGenerator
                         var quality = imageSharpCommands[QualityWebProcessor.Quality];
                         imageSharpCommands[QualityWebProcessor.Quality] = "100";
                         cfCommands.Add(QualityWebProcessor.Quality, quality);
-                    }
-
-                    if (options.FocalPoint is not null)
-                    {
-                        cfCommands.Add("gravity", FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
-                        addFit = true;
                     }
 
                     if (addFit)
