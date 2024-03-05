@@ -45,6 +45,25 @@ namespace CloudflareImageUrlGenerator
             {
                 if (_cloudflareImageUrlGeneratorOptions.CloudFlareSupportedImageFileTypes.Contains(format[0]))
                 {
+                    if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
+                    {
+                        if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                        {
+                            cfCommands.Add("w", width);
+                        }
+                    }
+                    if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Height))
+                    {
+                        if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
+                        {
+                            var h = Convert.ToInt32(height);
+                            if (h > 0)
+                            {
+                                cfCommands.Add("h", h.ToString());
+                            }
+                        }
+                    }
+
                     cfCommands.Add(FormatWebProcessor.Format, format[0]);
 
                     if (imageSharpCommands.ContainsKey(QualityWebProcessor.Quality))
@@ -53,6 +72,7 @@ namespace CloudflareImageUrlGenerator
                         imageSharpCommands[QualityWebProcessor.Quality] = "100";
                         cfCommands.Add(QualityWebProcessor.Quality, quality);
                     }
+
                 }
                 else
                 {
