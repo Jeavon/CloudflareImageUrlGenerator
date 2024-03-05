@@ -92,7 +92,7 @@ namespace CloudflareImageUrlGenerator
 
                     if (addFit)
                     {
-                        cfCommands.Add("fit", "crop");
+                        cfCommands.Add("fit", "cover");
                     }
                 }
                 else
