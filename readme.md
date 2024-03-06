@@ -1,6 +1,10 @@
 CloudflareImageUrlGenerator
 ============
-This package adds a ImageUrlGenerator to Umbraco that offloads image format conversion of avif and webp formats to Cloudflare Image Resizing. When implemented calls to GetCropUrl will generate Urls using this generator.
+This package adds a ImageUrlGenerator to Umbraco that offloads some image processing to Cloudflare Image Resizing.
+
+Currently the approach is "hybrid" with some commands offloaded to Cloudflare and some remaining with ImageSharp.Web.
+
+When implemented calls to GetCropUrl will generate Urls using this generator.
 
 It works very well with [Slimsy v4.1+](https://github.com/Jeavon/Slimsy) to offer avif format images as the primary source for modern browsers.
 
@@ -10,7 +14,7 @@ It works very well with [Slimsy v4.1+](https://github.com/Jeavon/Slimsy) to offe
 dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 1.0.0
 ```
 
-**For Umbraco v12+ please use v2.x**
+**For Umbraco v12 & v13+ please use v2.x**
 This Url Generator will **not work with the HMACSecretKey** due to the path being different so ensure that's not enabled
 
 ```
@@ -79,9 +83,9 @@ By default the provider offloads conversion of webp and avif file types, you can
 e.g.
 
 ```json
-	"CloudflareImageUrlGenerator": {
-		"Enabled": true,
-		"CloudFlareSupportedImageFileTypes": ["webp", "avif", "jpg", "png"]
-	}
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"CloudFlareSupportedImageFileTypes": ["webp", "avif", "jpg", "png"]
+}
 ```
 
