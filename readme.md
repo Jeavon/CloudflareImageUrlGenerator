@@ -14,7 +14,7 @@ dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 1.0.0
 This Url Generator will **not work with the HMACSecretKey** due to the path being different so ensure that's not enabled
 
 ```
-dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.0.2
+dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.1.0
 ```
 
 __Release Downloads__
