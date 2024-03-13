@@ -4,6 +4,7 @@ using Microsoft.Extensions.Primitives;
 using SixLabors.ImageSharp.Web;
 using SixLabors.ImageSharp.Web.Middleware;
 using SixLabors.ImageSharp.Web.Processors;
+using Umbraco.Cms.Core.Configuration.Models;
 using Umbraco.Cms.Core.Media;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Imaging.ImageSharp.Media;
@@ -17,7 +18,9 @@ namespace CloudflareImageUrlGenerator
         private RequestAuthorizationUtilities _requestAuthorizationUtilities { get; }
         private IOptions<ImageSharpMiddlewareOptions> _imageSharpMiddlewareOptions { get; }
         private readonly CloudflareImageUrlGeneratorOptions _cloudflareImageUrlGeneratorOptions;
-        public HybridCloudflareImageSharpImageUrlGenerator(SixLabors.ImageSharp.Configuration configuration, IOptionsMonitor<CloudflareImageUrlGeneratorOptions> cloudflareImageUrlGeneratorOptions, RequestAuthorizationUtilities requestAuthorizationUtilities, IOptions<ImageSharpMiddlewareOptions> imageSharpMiddlewareOptions)
+        private readonly ImagingSettings _imagingSettings;
+        const int MaxSourcePixels = 100000000;
+        public HybridCloudflareImageSharpImageUrlGenerator(SixLabors.ImageSharp.Configuration configuration, IOptionsMonitor<CloudflareImageUrlGeneratorOptions> cloudflareImageUrlGeneratorOptions, RequestAuthorizationUtilities requestAuthorizationUtilities, IOptions<ImageSharpMiddlewareOptions> imageSharpMiddlewareOptions, IOptions<ImagingSettings> imagingSettings)
         {
 
             SupportedImageFileTypes = configuration.ImageFormats.SelectMany(f => f.FileExtensions).ToArray();
@@ -25,8 +28,9 @@ namespace CloudflareImageUrlGenerator
             _requestAuthorizationUtilities = requestAuthorizationUtilities;
             _imageSharpMiddlewareOptions = imageSharpMiddlewareOptions;
             _cloudflareImageUrlGeneratorOptions = cloudflareImageUrlGeneratorOptions.CurrentValue;
+            _imagingSettings = imagingSettings.Value;
         }
-     
+
         public string? GetImageUrl(ImageUrlGenerationOptions? options)
         {
             if (options?.ImageUrl == null)
@@ -40,33 +44,112 @@ namespace CloudflareImageUrlGenerator
 
             Dictionary<string, StringValues> imageSharpCommands = QueryHelpers.ParseQuery(new Uri(fakeBaseUri, imageSharpString).Query);
 
-            // remove format from ImageSharp and add it to Cloudflare, additionally set ImageSharp quality to 100 (as source) and add quality parameter to Cloudflare 
-            if (imageSharpCommands.Remove(FormatWebProcessor.Format, out StringValues format))
+            int? sourceWidth = null;
+            int? sourceHeight = null;
+            if (imageSharpCommands.Remove("sourceWidth", out StringValues sourceWidthValue))
             {
+                sourceWidth = Convert.ToInt32(sourceWidthValue);
+            }
+            if (imageSharpCommands.Remove("sourceHeight", out StringValues sourceHeightValue))
+            {
+                sourceHeight = Convert.ToInt32(sourceHeightValue);
+            }
+
+            var resizeSourceAction = ResizeSourceAction.None;
+            int? sourceResize = null;
+            if (sourceWidth != null && sourceHeight != null)
+            {
+                if (sourceWidth * sourceHeight > MaxSourcePixels)
+                {
+                    if (sourceWidth > sourceHeight)
+                    {
+                        resizeSourceAction = ResizeSourceAction.Width;
+
+                        var ratio = (decimal)_imagingSettings.Resize.MaxWidth / (decimal)sourceWidth;
+                        var calculatedHeight = (int)Math.Round((decimal)sourceHeight * ratio, 0);
+
+                        if (_imagingSettings.Resize.MaxWidth * calculatedHeight > MaxSourcePixels)
+                        {
+                            // output image is still going to be over 100 mega pixels, let's play it safe and set size to 3k
+                            sourceResize = 3000;
+                        }
+                        else
+                        {
+                            sourceResize = _imagingSettings.Resize.MaxWidth;
+                        }
+                    }
+                    else
+                    {
+                        resizeSourceAction = ResizeSourceAction.Height;
+
+                        var ratio = (decimal)_imagingSettings.Resize.MaxHeight / (decimal)sourceHeight;
+                        var calculatedWidth = (int)Math.Round((decimal)sourceWidth * ratio, 0);
+
+                        if (_imagingSettings.Resize.MaxHeight * calculatedWidth > MaxSourcePixels)
+                        {
+                            // output image is still going to be over 100 mega pixels, let's play it safe and set size to 3k
+                            sourceResize = 3000;
+                        }
+                        else
+                        {
+                            sourceResize = _imagingSettings.Resize.MaxHeight;
+                        }
+                    }
+                }
+            }
+
+            // remove format from ImageSharp and add it to Cloudflare, additionally set ImageSharp quality to 100 (as source) and add quality parameter to Cloudflare 
+            if (imageSharpCommands.ContainsKey(FormatWebProcessor.Format))
+            {
+                var format = imageSharpCommands[FormatWebProcessor.Format];
+
                 if (_cloudflareImageUrlGeneratorOptions.CloudFlareSupportedImageFileTypes.Contains(format[0]))
                 {
+                    imageSharpCommands.Remove(FormatWebProcessor.Format);
                     var addFit = false;
 
                     // only offload crop mode resizing for now
                     if (options.ImageCropMode is null or ImageCropMode.Crop)
                     {
+
                         if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
                         {
-                            if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                            if (resizeSourceAction == ResizeSourceAction.Width)
                             {
+                                var width = imageSharpCommands[ResizeWebProcessor.Width];
+                                imageSharpCommands[ResizeWebProcessor.Width] = sourceResize.ToString();
                                 cfCommands.Add("w", width);
                                 addFit = true;
                             }
+                            else
+                            {
+                                if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                                {
+                                    cfCommands.Add("w", width);
+                                    addFit = true;
+                                }
+                            }
                         }
+
                         if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Height))
                         {
-                            if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
+                            if (resizeSourceAction == ResizeSourceAction.Height)
                             {
-                                var h = Convert.ToInt32(height);
-                                if (h > 0)
+                                var height = imageSharpCommands[ResizeWebProcessor.Height];
+                                imageSharpCommands[ResizeWebProcessor.Height] = sourceResize.ToString();
+                                cfCommands.Add("h", height);
+                                addFit = true;
+                            }
+                            else
+                            {
+                                if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
                                 {
-                                    cfCommands.Add("h", h.ToString());
-                                    addFit = true;
+                                    var h = Convert.ToInt32(height);
+                                    if (h > 0)
+                                    {
+                                        cfCommands.Add("h", h.ToString());
+                                        addFit = true;
+                                    }
                                 }
                             }
                         }
@@ -97,7 +180,7 @@ namespace CloudflareImageUrlGenerator
                 }
                 else
                 {
-                    return imageSharpString;
+                    return QueryHelpers.AddQueryString(options.ImageUrl, imageSharpCommands);
                 }
             }
 
@@ -118,5 +201,12 @@ namespace CloudflareImageUrlGenerator
 
             return  QueryHelpers.AddQueryString("/cdn-cgi/image/" + cfCommandString + options.ImageUrl, imageSharpCommands);
         }
+    }
+
+    internal enum ResizeSourceAction
+    {
+        None,
+        Width,
+        Height
     }
 }
