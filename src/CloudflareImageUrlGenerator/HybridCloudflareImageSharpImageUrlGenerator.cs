@@ -59,6 +59,7 @@ namespace CloudflareImageUrlGenerator
             int? sourceResize = null;
             if (sourceWidth != null && sourceHeight != null)
             {
+                // check if source image is over 100 mega pixels
                 if (sourceWidth * sourceHeight > MaxSourcePixels)
                 {
                     if (sourceWidth > sourceHeight)
