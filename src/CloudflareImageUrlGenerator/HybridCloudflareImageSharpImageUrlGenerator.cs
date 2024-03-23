@@ -7,6 +7,7 @@ using SixLabors.ImageSharp.Web.Processors;
 using Umbraco.Cms.Core.Configuration.Models;
 using Umbraco.Cms.Core.Media;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Imaging.ImageSharp.ImageProcessors;
 using Umbraco.Cms.Imaging.ImageSharp.Media;
 
 namespace CloudflareImageUrlGenerator
@@ -95,6 +96,21 @@ namespace CloudflareImageUrlGenerator
                         {
                             sourceResize = _imagingSettings.Resize.MaxHeight;
                         }
+                    }
+                }
+
+                if (options.Crop is not null)
+                {
+                    ImageUrlGenerationOptions.CropCoordinates? crop = options.Crop;
+
+                    if (imageSharpCommands.Remove(CropWebProcessor.Coordinates))
+                    {
+                        var top = Math.Round((decimal)(crop.Top * sourceHeight));
+                        var left = Math.Round((decimal)(crop.Left * sourceWidth));
+                        var bottom = Math.Round((decimal)(crop.Bottom * sourceHeight));
+                        var right = Math.Round((decimal)(crop.Right * sourceWidth));
+                        cfCommands.Add(CloudflareCommands.Trim, $"{top},{right},{bottom},{left}");
+
                     }
                 }
             }
