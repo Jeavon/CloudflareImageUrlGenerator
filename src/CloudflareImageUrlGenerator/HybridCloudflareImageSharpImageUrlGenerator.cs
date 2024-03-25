@@ -109,7 +109,7 @@ namespace CloudflareImageUrlGenerator
                         var left = Math.Round((decimal)(crop.Left * sourceWidth));
                         var bottom = Math.Round((decimal)(crop.Bottom * sourceHeight));
                         var right = Math.Round((decimal)(crop.Right * sourceWidth));
-                        cfCommands.Add(CloudflareCommands.Trim, $"{top},{right},{bottom},{left}");
+                        cfCommands.Add(CloudflareCommands.Trim, $"{top};{right};{bottom};{left}");
 
                     }
                 }
@@ -135,14 +135,14 @@ namespace CloudflareImageUrlGenerator
                             {
                                 var width = imageSharpCommands[ResizeWebProcessor.Width];
                                 imageSharpCommands[ResizeWebProcessor.Width] = sourceResize.ToString();
-                                cfCommands.Add("w", width);
+                                cfCommands.Add(CloudflareCommands.Width, width);
                                 addFit = true;
                             }
                             else
                             {
                                 if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
                                 {
-                                    cfCommands.Add("w", width);
+                                    cfCommands.Add(CloudflareCommands.Width, width);
                                     addFit = true;
                                 }
                             }
@@ -154,7 +154,7 @@ namespace CloudflareImageUrlGenerator
                             {
                                 var height = imageSharpCommands[ResizeWebProcessor.Height];
                                 imageSharpCommands[ResizeWebProcessor.Height] = sourceResize.ToString();
-                                cfCommands.Add("h", height);
+                                cfCommands.Add(CloudflareCommands.Height, height);
                                 addFit = true;
                             }
                             else
@@ -164,7 +164,7 @@ namespace CloudflareImageUrlGenerator
                                     var h = Convert.ToInt32(height);
                                     if (h > 0)
                                     {
-                                        cfCommands.Add("h", h.ToString());
+                                        cfCommands.Add(CloudflareCommands.Height, h.ToString());
                                         addFit = true;
                                     }
                                 }
@@ -175,7 +175,7 @@ namespace CloudflareImageUrlGenerator
                         {
                             if (imageSharpCommands.Remove(ResizeWebProcessor.Xy))
                             {
-                                cfCommands.Add("gravity", FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
+                                cfCommands.Add(CloudflareCommands.Gravity, FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
                                 addFit = true;
                             }
                         }
@@ -187,12 +187,12 @@ namespace CloudflareImageUrlGenerator
                     {
                         var quality = imageSharpCommands[QualityWebProcessor.Quality];
                         imageSharpCommands[QualityWebProcessor.Quality] = "100";
-                        cfCommands.Add(QualityWebProcessor.Quality, quality);
+                        cfCommands.Add(CloudflareCommands.Quality, quality);
                     }
 
                     if (addFit)
                     {
-                        cfCommands.Add("fit", "cover");
+                        cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Cover);
                     }
                 }
                 else
