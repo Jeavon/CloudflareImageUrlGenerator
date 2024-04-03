@@ -56,6 +56,9 @@ namespace CloudflareImageUrlGenerator
                 sourceHeight = Convert.ToInt32(sourceHeightValue);
             }
 
+            // Cloudflare handles EXIF auto orient by default
+            imageSharpCommands.Remove("autoorient");
+
             var resizeSourceAction = ResizeSourceAction.None;
             int? sourceResize = null;
             if (sourceWidth != null && sourceHeight != null)
