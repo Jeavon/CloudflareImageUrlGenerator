@@ -57,7 +57,7 @@ namespace CloudflareImageUrlGenerator
             }
 
             // Cloudflare handles EXIF auto orient by default
-            imageSharpCommands.Remove("autoorient");
+            imageSharpCommands.Remove(AutoOrientWebProcessor.AutoOrient);
 
             var resizeSourceAction = ResizeSourceAction.None;
             int? sourceResize = null;
