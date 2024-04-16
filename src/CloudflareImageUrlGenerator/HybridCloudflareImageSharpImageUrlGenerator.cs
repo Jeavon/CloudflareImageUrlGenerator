@@ -195,7 +195,14 @@ namespace CloudflareImageUrlGenerator
 
                     if (addFit)
                     {
-                        cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Cover);
+                        if (cfCommands.ContainsKey(CloudflareCommands.Width) && cfCommands.ContainsKey(CloudflareCommands.Height))
+                        {
+                            cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Cover);
+                        }
+                        else
+                        {
+                            cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Contain);
+                        }
                     }
                 }
                 else
