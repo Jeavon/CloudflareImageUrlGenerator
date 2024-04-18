@@ -10,8 +10,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Build", "Build", "{A93991AD
 		build\appveyor-semver.ps1 = build\appveyor-semver.ps1
 		appveyor.yml = appveyor.yml
 		build\check-release-version.ps1 = build\check-release-version.ps1
-		build\package.json = build\package.json
-		build\patch-package-manifest.js = build\patch-package-manifest.js
 		umbraco-marketplace.json = umbraco-marketplace.json
 	EndProjectSection
 EndProject

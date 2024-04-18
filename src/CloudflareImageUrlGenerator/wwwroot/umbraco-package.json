@@ -1,5 +1,7 @@
 {
   "id": "Umbraco.Community.CloudflareImageUrlGenerator",
   "name": "CloudflareImageUrlGenerator",
-  "allowPackageTelemetry": true
+  "allowPackageTelemetry": true,
+  "version": "",
+  "extensions": []
 }
