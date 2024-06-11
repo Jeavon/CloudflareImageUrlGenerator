@@ -12,7 +12,7 @@ It works very well with [Slimsy v4.1+](https://github.com/Jeavon/Slimsy) to offe
 This Url Generator will **not work with the HMACSecretKey** due to the path being different so ensure that's not enabled
 
 ```
-dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 3.0.0-beta1
+dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 3.0.0
 ```
 
 **For Umbraco v12 & v13+ please use v2.x**
