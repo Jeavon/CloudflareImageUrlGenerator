@@ -4,7 +4,7 @@ This package adds a ImageUrlGenerator to Umbraco that offloads some image proces
 
 Currently the approach is "hybrid" with some commands offloaded to Cloudflare and some remaining with ImageSharp.Web.
 
-When implemented calls to GetCropUrl will generate Urls using this generator.
+When implemented calls to GetCropUrl will generate Urls using this generator when the "format" parameter is present.
 
 It works very well with [Slimsy v4.1+](https://github.com/Jeavon/Slimsy) to offer avif format images as the primary source for modern browsers.
 
