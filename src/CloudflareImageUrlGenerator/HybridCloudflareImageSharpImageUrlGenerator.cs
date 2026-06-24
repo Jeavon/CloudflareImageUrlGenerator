@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using SixLabors.ImageSharp.Web;
@@ -12,7 +12,7 @@ using Umbraco.Cms.Imaging.ImageSharp.Media;
 
 namespace CloudflareImageUrlGenerator
 {
-    public sealed class HybridCloudflareImageSharpImageUrlGenerator : IImageUrlGenerator 
+    public sealed class HybridCloudflareImageSharpImageUrlGenerator : IImageUrlGenerator
     {
         public IEnumerable<string> SupportedImageFileTypes { get; }
         private SixLabors.ImageSharp.Configuration _configuration { get; }
@@ -226,7 +226,7 @@ namespace CloudflareImageUrlGenerator
                 return imageSharpString;
             }
 
-            return  QueryHelpers.AddQueryString("/cdn-cgi/image/" + cfCommandString + options.ImageUrl, imageSharpCommands);
+            return QueryHelpers.AddQueryString("/cdn-cgi/image/" + cfCommandString + options.ImageUrl, imageSharpCommands);
         }
     }
 

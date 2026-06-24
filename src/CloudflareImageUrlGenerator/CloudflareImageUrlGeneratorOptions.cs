@@ -1,4 +1,4 @@
-﻿namespace CloudflareImageUrlGenerator
+namespace CloudflareImageUrlGenerator
 {
     public sealed class CloudflareImageUrlGeneratorOptions
     {
