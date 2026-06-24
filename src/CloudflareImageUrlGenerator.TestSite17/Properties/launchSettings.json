@@ -5,7 +5,7 @@
     "anonymousAuthentication": true,
     "iisExpress": {
       "applicationUrl": "http://localhost:55030",
-      "sslPort": 44342
+      "sslPort": 44343
     }
   },
   "profiles": {
@@ -16,14 +16,14 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
-    "Umbraco.Web.UI": {
+    "CloudflareImageUrlGenerator.TestSite17": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": true,
-      "applicationUrl": "https://localhost:44342;http://localhost:55030",
+      "applicationUrl": "https://localhost:44343",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
-      }      
+      }
     }
   }
 }

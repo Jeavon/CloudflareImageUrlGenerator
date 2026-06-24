@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/Build/">
+    <File Path="appveyor.yml" />
+    <File Path="build/appveyor-semver.ps1" />
+    <File Path="build/check-release-version.ps1" />
+    <File Path="umbraco-marketplace.json" />
+  </Folder>
+  <Project Path="src/CloudflareImageUrlGenerator.TestSite17/CloudflareImageUrlGenerator.TestSite17.csproj" />
+  <Project Path="src/CloudflareImageUrlGenerator/CloudflareImageUrlGenerator.csproj" />
+</Solution>

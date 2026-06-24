@@ -1,10 +1,13 @@
 
+using CloudflareImageUrlGenerator;
+
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.CreateUmbracoBuilder()
     .AddBackOffice()
     .AddWebsite()
     .AddComposers()
+    .AddCloudflareImageUrlGenerator()
     .Build();
 
 WebApplication app = builder.Build();
