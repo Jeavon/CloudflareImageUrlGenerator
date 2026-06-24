@@ -12,3 +12,5 @@ build/tools/
 [Oo]bj/
 node_modules/
 
+publish/*
+deploy.zip

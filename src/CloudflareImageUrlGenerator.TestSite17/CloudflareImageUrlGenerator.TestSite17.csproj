@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Crumpled.RobotsTxt" />
     <PackageReference Include="Umbraco.Cms" />
     <PackageReference Include="Umbraco.Cms.DevelopmentMode.Backoffice" />
     <PackageReference Include="Umbraco.TheStarterKit" />
@@ -30,5 +31,12 @@
     <RazorCompileOnBuild>false</RazorCompileOnBuild>
     <RazorCompileOnPublish>false</RazorCompileOnPublish>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Include SQLite database in publish output -->
+    <None Include="umbraco/Data/Umbraco.sqlite.db" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Include all media files in publish output -->
+    <None Include="wwwroot/media/**" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 
 </Project>
