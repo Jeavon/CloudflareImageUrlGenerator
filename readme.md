@@ -21,13 +21,14 @@ When implemented calls to GetCropUrl will generate Urls using this generator whe
 | `rmode=max` | `fit=scale-down` | Shrinks to fit, never enlarges |
 | `rmode=min` | `fit=contain` | Fits within dimensions, may be smaller |
 | `rmode=pad` / `rmode=boxpad` | `fit=pad` | Letterboxes with white/transparent background **only when no custom bgcolor is set** |
+| `rmode=pad` / `rmode=boxpad` with `bgcolor` | _(no fit/width/height in CF)_ | Cloudflare handles format+quality; ImageSharp handles the pad+bgcolor in the source image |
 | `rmode=stretch` | _(no fit param)_ | Stretches to exact dimensions |
 
 ### Remaining with ImageSharp.Web (not offloaded)
 
 | ImageSharp command | Notes |
 |---|---|
-| `bgcolor` with `rmode=pad`/`boxpad` | When a custom background color is set for pad modes, offloading is skipped to preserve the color (Cloudflare uses white/transparent)|
+| `bgcolor` with `rmode=pad`/`boxpad` | Pad sizing (rmode/width/height/bgcolor) stays with ImageSharp to preserve the custom colour; Cloudflare still handles format and quality |
 | Any other `furtherOptions` | Custom or unrecognised commands stay in the ImageSharp source URL |
 
 When remaining ImageSharp commands are present in the source URL and `HMACSecretKey` is configured, a valid HMAC token is automatically appended to the source URL.
@@ -119,6 +120,15 @@ e.g.
 "CloudflareImageUrlGenerator": {
 	"Enabled": true,
 	"CloudFlareSupportedImageFileTypes": ["webp", "avif", "jpg", "png"]
+}
+```
+
+By default `OffloadAllResizing` is `false` and Cloudflare offloading only activates when a `format` parameter is present. When set to `true`, Cloudflare handles width/height/quality/crop for any request, even without a format parameter. If format is present but not in `CloudFlareSupportedImageFileTypes`, it stays with ImageSharp while the resize is still offloaded to Cloudflare.
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"OffloadAllResizing": true
 }
 ```
 
