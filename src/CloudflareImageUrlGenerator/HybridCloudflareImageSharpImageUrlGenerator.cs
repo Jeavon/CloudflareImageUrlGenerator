@@ -135,6 +135,10 @@ namespace CloudflareImageUrlGenerator
 
                     if (options.ImageCropMode is null or ImageCropMode.Crop)
                     {
+                        // Remove mode and anchor — Cloudflare handles crop via cover fit + gravity
+                        imageSharpCommands.Remove(ResizeWebProcessor.Mode);
+                        imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
+
                         if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
                         {
                             if (resizeSourceAction == ResizeSourceAction.Width)
@@ -234,6 +238,14 @@ namespace CloudflareImageUrlGenerator
                     }
                     else if (options.ImageCropMode is ImageCropMode.Pad or ImageCropMode.BoxPad)
                     {
+                        // Only offload Pad/BoxPad if there's no custom background color
+                        if (imageSharpCommands.ContainsKey(BackgroundColorWebProcessor.Color))
+                        {
+                            // Skip Cloudflare offloading to preserve custom bgcolor
+                            AddHmacIfEnabled(options.ImageUrl, imageSharpCommands);
+                            return QueryHelpers.AddQueryString(options.ImageUrl, imageSharpCommands);
+                        }
+
                         imageSharpCommands.Remove(ResizeWebProcessor.Mode);
                         imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
 
@@ -253,8 +265,6 @@ namespace CloudflareImageUrlGenerator
                             }
                         }
 
-                        // Note: Cloudflare pads with transparent/white; bgcolor is not forwarded
-                        imageSharpCommands.Remove(ResizeWebProcessor.Color);
                         fitOverride = CloudflareCommands.Pad;
                     }
                     else if (options.ImageCropMode is ImageCropMode.Stretch)

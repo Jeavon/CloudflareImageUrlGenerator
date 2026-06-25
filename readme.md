@@ -20,14 +20,14 @@ When implemented calls to GetCropUrl will generate Urls using this generator whe
 | `rmode=crop` (default) | `fit=cover` | Crops to fill both dimensions |
 | `rmode=max` | `fit=scale-down` | Shrinks to fit, never enlarges |
 | `rmode=min` | `fit=contain` | Fits within dimensions, may be smaller |
-| `rmode=pad` / `rmode=boxpad` | `fit=pad` | Letterboxes with transparent/white background |
+| `rmode=pad` / `rmode=boxpad` | `fit=pad` | Letterboxes with white/transparent background **only when no custom bgcolor is set** |
 | `rmode=stretch` | _(no fit param)_ | Stretches to exact dimensions |
 
 ### Remaining with ImageSharp.Web (not offloaded)
 
 | ImageSharp command | Notes |
 |---|---|
-| `bgcolor` | Background fill colour for `pad`/`boxpad` modes — Cloudflare uses transparent/white |
+| `bgcolor` with `rmode=pad`/`boxpad` | When a custom background color is set for pad modes, offloading is skipped to preserve the color (Cloudflare uses white/transparent)|
 | Any other `furtherOptions` | Custom or unrecognised commands stay in the ImageSharp source URL |
 
 When remaining ImageSharp commands are present in the source URL and `HMACSecretKey` is configured, a valid HMAC token is automatically appended to the source URL.
