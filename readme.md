@@ -6,6 +6,32 @@ Currently the approach is "hybrid" with some commands offloaded to Cloudflare an
 
 When implemented calls to GetCropUrl will generate Urls using this generator when the "format" parameter is present.
 
+### Offloaded to Cloudflare Image Resizing
+
+| ImageSharp command | Cloudflare command | Notes |
+|---|---|---|
+| `format` | `format` | Only when format is in `CloudFlareSupportedImageFileTypes` |
+| `width` | `w` | |
+| `height` | `h` | |
+| `quality` | `quality` | ImageSharp source is set to `quality=100`; Cloudflare applies the requested quality |
+| `xy` (focal point) | `gravity` | Expressed as `{left}x{top}` fractions; only for `crop`/default mode |
+| `rxy` (crop coordinates) | `trim` | Pixel-based `top;right;bottom;left` |
+| `autoOrient` | _(removed)_ | Cloudflare handles EXIF auto-orientation by default |
+| `rmode=crop` (default) | `fit=cover` | Crops to fill both dimensions |
+| `rmode=max` | `fit=scale-down` | Shrinks to fit, never enlarges |
+| `rmode=min` | `fit=contain` | Fits within dimensions, may be smaller |
+| `rmode=pad` / `rmode=boxpad` | `fit=pad` | Letterboxes with transparent/white background |
+| `rmode=stretch` | _(no fit param)_ | Stretches to exact dimensions |
+
+### Remaining with ImageSharp.Web (not offloaded)
+
+| ImageSharp command | Notes |
+|---|---|
+| `bgcolor` | Background fill colour for `pad`/`boxpad` modes — Cloudflare uses transparent/white |
+| Any other `furtherOptions` | Custom or unrecognised commands stay in the ImageSharp source URL |
+
+When remaining ImageSharp commands are present in the source URL and `HMACSecretKey` is configured, a valid HMAC token is automatically appended to the source URL.
+
 It works very well with [Slimsy v4.1+](https://github.com/Jeavon/Slimsy) to offer avif format images as the primary source for modern browsers.
 
 **For Umbraco v17 use v4.x**
