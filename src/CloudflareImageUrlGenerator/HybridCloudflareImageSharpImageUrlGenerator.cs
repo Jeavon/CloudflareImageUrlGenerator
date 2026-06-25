@@ -45,6 +45,10 @@ namespace CloudflareImageUrlGenerator
 
             Dictionary<string, StringValues> imageSharpCommands = QueryHelpers.ParseQuery(new Uri(fakeBaseUri, imageSharpString).Query);
 
+            // Strip the HMAC token - it was computed for the original params and will be invalid
+            // after we move commands to Cloudflare. We recompute it at each return point.
+            imageSharpCommands.Remove(RequestAuthorizationUtilities.TokenCommand);
+
             int? sourceWidth = null;
             int? sourceHeight = null;
             if (imageSharpCommands.Remove("sourceWidth", out StringValues sourceWidthValue))
@@ -207,6 +211,7 @@ namespace CloudflareImageUrlGenerator
                 }
                 else
                 {
+                    AddHmacIfEnabled(options.ImageUrl, imageSharpCommands);
                     return QueryHelpers.AddQueryString(options.ImageUrl, imageSharpCommands);
                 }
             }
@@ -226,7 +231,21 @@ namespace CloudflareImageUrlGenerator
                 return imageSharpString;
             }
 
+            AddHmacIfEnabled(options.ImageUrl, imageSharpCommands);
             return QueryHelpers.AddQueryString("/cdn-cgi/image/" + cfCommandString + options.ImageUrl, imageSharpCommands);
+        }
+
+        private void AddHmacIfEnabled(string imageUrl, Dictionary<string, StringValues> imageSharpCommands)
+        {
+            if (_imageSharpMiddlewareOptions.Value.HMACSecretKey.Length != 0)
+            {
+                var uri = QueryHelpers.AddQueryString(imageUrl, imageSharpCommands);
+                var token = _requestAuthorizationUtilities.ComputeHMAC(uri, CommandHandling.Sanitize);
+                if (!string.IsNullOrEmpty(token))
+                {
+                    imageSharpCommands[RequestAuthorizationUtilities.TokenCommand] = token;
+                }
+            }
         }
     }
 

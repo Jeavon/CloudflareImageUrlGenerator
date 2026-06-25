@@ -34,7 +34,7 @@
 
                 <div class="employee-grid__item">
                     @{
-                            var imageUrl = Url.GetCropUrl(person.Photo, 323, 300, furtherOptions:"format=webp", htmlEncode: false).ToString();
+                            var imageUrl = Url.GetCropUrl(person.Photo, 323, 300, quality: 80, furtherOptions:"format=webp", htmlEncode: false).ToString();
                     }
                     <div class="employee-grid__item__image"><img src="@imageUrl" /></div>
                     <div class="employee-grid__item__details">
