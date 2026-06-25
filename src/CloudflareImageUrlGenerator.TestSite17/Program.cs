@@ -1,5 +1,6 @@
 
 using CloudflareImageUrlGenerator;
+using Slimsy.DependencyInjection;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +8,7 @@ builder.CreateUmbracoBuilder()
     .AddBackOffice()
     .AddWebsite()
     .AddComposers()
+    .AddSlimsy()
     .AddCloudflareImageUrlGenerator()
     .Build();
 
