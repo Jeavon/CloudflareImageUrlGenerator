@@ -1,4 +1,5 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\buildMultiTargeting\Umbraco.Community.CloudflareImageUrlGenerator.props" />
   <ItemGroup>
     <UmbracoJsonSchemaFiles Include="$(MSBuildThisFileDirectory)..\appsettings-schema.CloudflareImageUrlGenerator.json" Weight="-50" />
   </ItemGroup>
