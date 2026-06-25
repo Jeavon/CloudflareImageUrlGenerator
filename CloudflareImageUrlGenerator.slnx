@@ -6,5 +6,6 @@
     <File Path="umbraco-marketplace.json" />
   </Folder>
   <Project Path="src/CloudflareImageUrlGenerator.TestSite17/CloudflareImageUrlGenerator.TestSite17.csproj" />
+  <Project Path="src/CloudflareImageUrlGenerator.TestSite18/CloudflareImageUrlGenerator.TestSite18.csproj" />
   <Project Path="src/CloudflareImageUrlGenerator/CloudflareImageUrlGenerator.csproj" />
 </Solution>

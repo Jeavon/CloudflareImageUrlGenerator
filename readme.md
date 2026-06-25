@@ -34,18 +34,18 @@ When remaining ImageSharp commands are present in the source URL and `HMACSecret
 
 It works very well with [Slimsy v4.1+](https://github.com/Jeavon/Slimsy) to offer avif format images as the primary source for modern browsers.
 
-**For Umbraco v17 use v4.x**
+**For Umbraco v17 & v18 use v4.x**
 This Url Generator **supports HMACSecretKey if enabled** 
 
 ```
-dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 4.0.0
+dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 4.*
 ```
 
 **For Umbraco v12 & v13+ please use v2.x**
 This Url Generator will **not work with the HMACSecretKey** due to the path being different so ensure that's not enabled
 
 ```
-dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.2.0
+dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.*
 ```
 
 **For Umbraco v10 & v11 please use v1.x**

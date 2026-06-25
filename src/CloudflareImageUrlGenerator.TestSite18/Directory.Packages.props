@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Crumpled.RobotsTxt" Version="3.1.0" />
+    <PackageVersion Include="Our.Umbraco.Slimsy" Version="7.1.1" />
+    <PackageVersion Include="Umbraco.Cms" Version="18.0.0" />
+    <PackageVersion Include="Umbraco.Cms.DevelopmentMode.Backoffice" Version="18.0.0" />
+    <PackageVersion Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3" />
+    <PackageVersion Include="Umbraco.TheStarterKit" Version="18.0.0" />
+    <PackageVersion Include="uSync" Version="18.0.0" />
+  </ItemGroup>
+</Project>
