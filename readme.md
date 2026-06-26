@@ -88,7 +88,7 @@ services.AddUmbraco(_env, _config)
 
 ### 3. Enable Image Resizing on Cloudflare
 
-https://developers.cloudflare.com/images/image-resizing/enable-image-resizing/
+https://developers.cloudflare.com/images/optimization/transformations/
 
 ### 4. Optionally disable the generator for local development
 
@@ -112,7 +112,7 @@ Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` 
 
 ### Further Options (v2.0.1+)
 
-By default the provider offloads conversion of webp and avif file types, you can configure further types, check they are supported output types https://developers.cloudflare.com/images/image-resizing/format-limitations/
+By default the provider offloads conversion of webp and avif file types, you can configure further types, check they are supported output types https://developers.cloudflare.com/images/get-started/limits/
 
 e.g.
 
@@ -242,6 +242,3 @@ Once configured, simply use Slimsy tag helpers as normal — `sourceWidth` and `
 <!-- Or with SlimsyService -->
 <img srcset="@SlimsyService.GetSrcSetUrls(person.Photo, 323, 300)" />
 ```
-
-
-
