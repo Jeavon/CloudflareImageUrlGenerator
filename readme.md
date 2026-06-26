@@ -132,3 +132,116 @@ By default `OffloadAllResizing` is `false` and Cloudflare offloading only activa
 }
 ```
 
+## Usage Without Slimsy
+
+While the Cloudflare Image URL Generator works best with Slimsy for modern responsive image patterns, you can use it directly without Slimsy by calling `GetCropUrl()` directly in your Razor views or controllers.
+
+### Basic Usage with Format
+
+```csharp
+// In your Razor view - format triggers Cloudflare for resize and conversion
+var imageUrl = Url.GetCropUrl(mediaItem, 323, 300, furtherOptions: "format=webp", htmlEncode: false).ToString();
+<img src="@imageUrl" alt="Description" />
+```
+
+When you include a `format` parameter with a supported format (webp, avif, jpg, png), the Cloudflare Image URL Generator automatically handles the resizing and format conversion.
+
+## Understanding sourceWidth and sourceHeight
+
+### What Are They For?
+
+Umbraco stores crop coordinates as **fractions** (values between 0.0 and 1.0), for example:
+
+```
+crop.Left = 0.25, crop.Top = 0.1, crop.Right = 0.75, crop.Bottom = 0.9
+```
+
+Cloudflare's `trim` parameter requires **pixel values**, for example:
+
+```
+trim=120;600;1080;300
+```
+
+To convert from fractions to pixels, the generator needs to know the original image dimensions. This is what `sourceWidth` and `sourceHeight` provide. They must be passed alongside a predefined crop alias — without a crop alias, there are no fractional coordinates to convert.
+
+**With sourceWidth and sourceHeight (and a crop alias):**
+- Fractional crop coordinates are converted to pixels → Cloudflare handles the crop via `trim`
+- Full Cloudflare pipeline: crop + resize + format conversion
+
+**Without sourceWidth and sourceHeight:**
+- The `rxy` (fractional crop) parameter stays in the ImageSharp source URL
+- ImageSharp handles the crop on the source image
+- Cloudflare still handles format conversion and quality
+- The image is still cropped correctly, just by ImageSharp rather than Cloudflare
+
+### Secondary Use: Oversized Source Images
+
+`sourceWidth` and `sourceHeight` are also used to detect images over 100 megapixels (100,000,000 pixels). If a source image exceeds this threshold, the generator automatically pre-scales it via ImageSharp before sending it to Cloudflare, preventing processing failures on extremely large images.
+
+### Usage Without Slimsy — Crop Offloaded to Cloudflare
+
+Use named parameters to reach the overload that supports both `cropAlias` and `furtherOptions`. The `useCropDimensions: true` parameter tells `GetCropUrl` to use the output dimensions defined on the crop itself (e.g. 300×300 for a GlobalSquare crop).
+
+```csharp
+// Get the media item's actual dimensions so the fractional crop coordinates
+// can be converted to pixel values for Cloudflare's trim parameter
+var sourceWidth = mediaItem.Value<int>("umbracoWidth");
+var sourceHeight = mediaItem.Value<int>("umbracoHeight");
+
+var imageUrl = Url.GetCropUrl(
+    mediaItem,
+    cropAlias: "GlobalSquare",
+    useCropDimensions: true,
+    furtherOptions: $"sourceWidth={sourceWidth}&sourceHeight={sourceHeight}&format=webp",
+    htmlEncode: false
+).ToString();
+
+<img src="@imageUrl" alt="Description" />
+```
+
+### Usage Without Slimsy — Fallback (ImageSharp handles the crop)
+
+If you omit `sourceWidth` and `sourceHeight`, the crop stays in the ImageSharp source URL. This still produces the correct output but ImageSharp does the crop work instead of Cloudflare.
+
+```csharp
+// Without sourceWidth/sourceHeight the rxy crop parameter stays in the ImageSharp
+// source URL. ImageSharp handles the crop; Cloudflare handles format and quality.
+var imageUrl = Url.GetCropUrl(
+    mediaItem,
+    cropAlias: "GlobalSquare",
+    useCropDimensions: true,
+    furtherOptions: "format=webp",
+    htmlEncode: false
+).ToString();
+
+<img src="@imageUrl" alt="Description" />
+```
+
+### Usage With Slimsy (Automatic sourceWidth & sourceHeight)
+
+Slimsy v4.1+ can be configured to automatically add `sourceWidth` and `sourceHeight` to all generated URLs. This is the recommended approach when using Slimsy, as it ensures crops are always offloaded to Cloudflare without any manual work in your views.
+
+#### Configuration
+
+In your `appsettings.json`:
+
+```json
+"Slimsy": {
+  "AddSourceDimensions": true
+}
+```
+
+#### Usage
+
+Once configured, simply use Slimsy tag helpers as normal — `sourceWidth` and `sourceHeight` are added automatically from the media item's metadata:
+
+```html
+<!-- Slimsy automatically includes sourceWidth and sourceHeight, enabling Cloudflare crop offloading -->
+<slimsy-picture media-item="@person.Photo" width="323" height="300" format="webp"></slimsy-picture>
+
+<!-- Or with SlimsyService -->
+<img srcset="@SlimsyService.GetSrcSetUrls(person.Photo, 323, 300)" />
+```
+
+
+

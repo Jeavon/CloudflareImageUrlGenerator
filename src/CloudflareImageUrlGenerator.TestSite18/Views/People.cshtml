@@ -57,41 +57,56 @@
             <a class="nav-link nav-link--black" href="">Other</a>
         </nav>
         -->
+
+        <h2>Without Slimsy - Using a predefined crop with sourceWidth and sourceHeight (crop offloaded to Cloudflare via trim)</h2>
         <div class="employee-grid">
             @foreach (Person person in Model.Children<Person>())
             {
-
+              if (person.Photo != null)
+              {
                 <div class="employee-grid__item">
+                  <div class="employee-grid__item__image">
                     @{
-                        var imageUrl = Url.GetCropUrl(person.Photo, 323, 300, quality: 80, furtherOptions: "format=webp", htmlEncode: false).ToString();
+                      // sourceWidth and sourceHeight allow the fractional crop coordinates (rxy)
+                      // to be converted into pixel values for Cloudflare's trim parameter.
+                      // Without them, ImageSharp would handle the crop instead.
+                      var sourceWidth = person.Photo.Value<int>("umbracoWidth");
+                      var sourceHeight = person.Photo.Value<int>("umbracoHeight");
+                      var imageUrl = Url.GetCropUrl(person.Photo, cropAlias: "GlobalSquare", useCropDimensions: true, furtherOptions: $"sourceWidth={sourceWidth}&sourceHeight={sourceHeight}&format=webp", htmlEncode: false).ToString();
                     }
-                    <div class="employee-grid__item__image"><img src="@imageUrl" /></div>
-                    <div class="employee-grid__item__details">
-                        <h3 class="employee-grid__item__name">@person.Name</h3>
-                        @if (!string.IsNullOrEmpty(person.Email))
-                        {
-                            <a href="mailto:@person.Email" class="employee-grid__item__email">@person.Email</a>
-                        }
-                        <div class="employee-grid__item__contact">
-                            @{
-                                SocialLink(person.FacebookUsername, "Facebook");
-                            }
-                            @{
-                                SocialLink(person.TwitterUsername, "Twitter");
-                            }
-                            @{
-                                SocialLink(person.LinkedInUsername, "LinkedIn");
-                            }
-                            @{
-                                SocialLink(person.InstagramUsername, "Instagram");
-                            }
-                        </div>
-                    </div>
+                    <div class="employee-grid__item__image"><img src="@imageUrl" alt="@person.Name" /></div>
+                  </div>
+                  @{
+                    ContactDetails(person);
+                  }
                 </div>
+              }
             }
         </div>
-
-        
+        <h2>Without Slimsy - Fallback (no sourceWidth/sourceHeight, crop handled by ImageSharp)</h2>
+        <div class="employee-grid">
+            @foreach (Person person in Model.Children<Person>())
+            {
+              if (person.Photo != null)
+              {
+                <div class="employee-grid__item">
+                  <div class="employee-grid__item__image">
+                    @{
+                      // Without sourceWidth and sourceHeight, the fractional crop coordinates (rxy)
+                      // cannot be converted to Cloudflare trim pixel values.
+                      // The rxy parameter stays in the ImageSharp source URL and ImageSharp
+                      // handles the crop. Cloudflare still handles format conversion and quality.
+                      var imageUrl = Url.GetCropUrl(person.Photo, cropAlias: "GlobalSquare", useCropDimensions: true, furtherOptions: "format=webp", htmlEncode: false).ToString();
+                    }
+                    <div class="employee-grid__item__image"><img src="@imageUrl" alt="@person.Name" /></div>
+                  </div>
+                  @{
+                    ContactDetails(person);
+                  }
+                </div>
+              }
+            }
+        </div>
         <h2>No Slimsy, plain old GetCropUrl</h2>
         <div class="employee-grid">
             @foreach (Person person in Model.Children<Person>())
