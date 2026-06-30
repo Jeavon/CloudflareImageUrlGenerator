@@ -1,6 +1,6 @@
 const PUBLIC_PATH_PREFIX = "cdn-mysite/image/";
 const PRIVATE_ORIGIN_BASE_URL = "https://mysite.blob.core.windows.net";
-const PRIVATE_ORIGIN_MEDIA_PATH = "/mycontainer/media";
+const PRIVATE_ORIGIN_CONTAINER_PATH = "/mycontainer";
 const ENABLE_WORKER_LOGGING = true;
 
 function logWorker(message, details) {
@@ -42,7 +42,7 @@ export default {
     }
 
     // Map the public path to your private origin.
-    const originPath = `${PRIVATE_ORIGIN_MEDIA_PATH}/${sourcePath}`;
+    const originPath = `${PRIVATE_ORIGIN_CONTAINER_PATH}/${sourcePath}`;
     const originUrl = new URL(`${originPath}${url.search}`, PRIVATE_ORIGIN_BASE_URL);
 
     logWorker("worker origin path", originPath);
@@ -72,7 +72,11 @@ export default {
       } else if (normalizedKey === "trim") {
         imageOptions.trim = value;
       } else if (normalizedKey === "gravity") {
-        imageOptions.gravity = value;
+        const [x, y] = value.split('x', 2);
+        imageOptions.gravity = {
+          x: Number(x),
+          y: Number(y)
+        };
       } else {
         imageOptions[normalizedKey] = value;
       }

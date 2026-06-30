@@ -176,7 +176,7 @@ If your source origin is a blob store or another endpoint that cannot process Im
 
 #### Sample Cloudflare worker
 
-With the path prefix setting in place, you can also proxy the generated requests through a Cloudflare Worker. This is useful when you want to avoid exposing the private origin domain in the public URL and keep the generated URLs shorter and cleaner. The package already emits the command string and source URL in the format the worker expects, so no package code changes are required.
+With the path prefix setting in place, you can also proxy the generated requests through a Cloudflare Worker. This is useful when you want to avoid exposing the private origin domain in the public URL and keep the generated URLs shorter and cleaner. 
 
 Example:
 
@@ -185,6 +185,19 @@ https://cf-images-demo.crumpled-dog.dev/cdn-mysite/image/w=300,h=300,format=webp
 ```
 
 The worker can receive that request, split the command segment from the source URL, and forward it to your image pipeline as a `cf.image` style request. A sample worker implementation is available in [worker-example.js](worker-example.js).
+
+
+For this worker example, your package configuration would look like this:
+
+```json
+"CloudflareImageUrlGenerator": {
+  "Enabled": true,
+  "CloudFlareSupportedImageFileTypes": ["webp", "avif", "jpg", "png"],
+  "UseImageSharpFallback": false,
+  "OffloadAllResizing": true,
+  "CloudflarePathPrefix": "/cdn-mysite/image/"
+}
+```
 
 ## Usage Without Slimsy
 

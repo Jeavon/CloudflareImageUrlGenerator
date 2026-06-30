@@ -348,13 +348,11 @@ namespace CloudflareImageUrlGenerator
                 return imageSharpString;
             }
 
-            var cloudflarePathPrefix = string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.CloudflarePathPrefix)
-                ? "/cdn-cgi/image/"
-                : _cloudflareImageUrlGeneratorOptions.CloudflarePathPrefix.TrimEnd('/') + "/";
+            var cloudflarePathPrefix = EnsureTrailingSlash(NormalizePathPrefix(_cloudflareImageUrlGeneratorOptions.CloudflarePathPrefix));
 
             var cloudflareBasePath = string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix)
                 ? cloudflarePathPrefix
-                : $"{_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix.TrimEnd('/')}{cloudflarePathPrefix}";
+                : JoinUrlSegments(NormalizeUrlPrefix(_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix), cloudflarePathPrefix);
 
             var sourceUrl = options.ImageUrl;
             var sourceQueryParameters = new Dictionary<string, StringValues>();
@@ -368,17 +366,19 @@ namespace CloudflareImageUrlGenerator
             }
             if (!string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix))
             {
-                var absoluteOriginPrefix = _cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix.TrimEnd('/');
+                var absoluteOriginPrefix = NormalizeUrlPrefix(_cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix);
                 if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out _) &&
                     !sourceUrl.StartsWith(absoluteOriginPrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    sourceUrl = $"{absoluteOriginPrefix}/{sourceUrl.TrimStart('/')}";
+                    sourceUrl = JoinUrlSegments(absoluteOriginPrefix, sourceUrl.TrimStart('/'));
                 }
             }
 
+            var normalizedSourceUrl = sourceUrl;
+
             var cloudflareUrlSuffix = string.IsNullOrEmpty(cfCommandString)
-                ? sourceUrl
-                : $"{cfCommandString}/{sourceUrl}";
+                ? normalizedSourceUrl
+                : JoinUrlSegments(cfCommandString, normalizedSourceUrl);
 
             if (imageSharpCommands.Count == 0 || !imageSharpCommands.Keys.Any(k => k != "v"))
             {
@@ -398,6 +398,62 @@ namespace CloudflareImageUrlGenerator
             }
 
             return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
+        }
+
+        private static string EnsureTrailingSlash(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "/";
+            }
+
+            return value.EndsWith('/') ? value : value + "/";
+        }
+
+        private static string NormalizePathPrefix(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "/cdn-cgi/image";
+            }
+
+            var trimmed = value.Trim().Replace("\\", "/");
+            var segments = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return "/" + string.Join("/", segments);
+        }
+
+        private static string NormalizeUrlPrefix(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var trimmed = value.Trim().Replace("\\", "/");
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
+            {
+                return $"{absoluteUri.GetLeftPart(UriPartial.Authority)}{absoluteUri.AbsolutePath.TrimEnd('/')}";
+            }
+
+            return trimmed.TrimEnd('/');
+        }
+
+        private static string JoinUrlSegments(string left, string right)
+        {
+            var leftTrimmed = left?.TrimEnd('/') ?? string.Empty;
+            var rightTrimmed = right?.TrimStart('/') ?? string.Empty;
+
+            if (string.IsNullOrEmpty(leftTrimmed))
+            {
+                return rightTrimmed;
+            }
+
+            if (string.IsNullOrEmpty(rightTrimmed))
+            {
+                return leftTrimmed;
+            }
+
+            return $"{leftTrimmed}/{rightTrimmed}";
         }
 
         private void AddHmacIfEnabled(string imageUrl, Dictionary<string, StringValues> imageSharpCommands)
