@@ -7,6 +7,8 @@ namespace CloudflareImageUrlGenerator
         public bool Enabled { get; set; } = true;
         public string[] CloudFlareSupportedImageFileTypes { get; set; } = new string[] { "webp", "avif" };
         public bool OffloadAllResizing { get; set; } = false;
+        public string? AbsoluteOriginPrefix { get; set; }
+        public string? AbsoluteCdnPrefix { get; set; }
 
     }
 }

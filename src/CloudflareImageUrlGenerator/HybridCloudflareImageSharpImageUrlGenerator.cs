@@ -343,10 +343,29 @@ namespace CloudflareImageUrlGenerator
                 return imageSharpString;
             }
 
+            var cloudflareBasePath = string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix)
+                ? "/cdn-cgi/image/"
+                : $"{_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix.TrimEnd('/')}/cdn-cgi/image/";
+
+            var sourceUrl = options.ImageUrl;
+            if (!string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix))
+            {
+                var absoluteOriginPrefix = _cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix.TrimEnd('/');
+                if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out _) &&
+                    !sourceUrl.StartsWith(absoluteOriginPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    sourceUrl = $"{absoluteOriginPrefix}/{sourceUrl.TrimStart('/')}";
+                }
+            }
+
+            var cloudflareUrlSuffix = string.IsNullOrEmpty(cfCommandString)
+                ? sourceUrl
+                : $"{cfCommandString}/{sourceUrl}";
+
             if (imageSharpCommands.Count == 0 || !imageSharpCommands.Keys.Any(k => k != "v"))
             {
                 // No actual ImageSharp processing needed — pass v (if present) for Cloudflare cache busting
-                return QueryHelpers.AddQueryString("/cdn-cgi/image/" + cfCommandString + options.ImageUrl, imageSharpCommands);
+                return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, imageSharpCommands);
             }
 
             // ImageSharp processing is needed — set quality=100 to prevent double compression
@@ -355,8 +374,8 @@ namespace CloudflareImageUrlGenerator
                 imageSharpCommands[QualityWebProcessor.Quality] = "100";
             }
 
-            AddHmacIfEnabled(options.ImageUrl, imageSharpCommands);
-            return QueryHelpers.AddQueryString("/cdn-cgi/image/" + cfCommandString + options.ImageUrl, imageSharpCommands);
+            AddHmacIfEnabled(sourceUrl, imageSharpCommands);
+            return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, imageSharpCommands);
         }
 
         private void AddHmacIfEnabled(string imageUrl, Dictionary<string, StringValues> imageSharpCommands)

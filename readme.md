@@ -132,6 +132,24 @@ By default `OffloadAllResizing` is `false` and Cloudflare offloading only activa
 }
 ```
 
+If you want to combine both behaviors, use `AbsoluteCdnPrefix` for the Cloudflare endpoint host and `AbsoluteOriginPrefix` for the image source parameter:
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"AbsoluteCdnPrefix": "https://cf-images-demo.mywebsite.dev",
+	"AbsoluteOriginPrefix": "https://mywebsite.blob.core.windows.net/mycontainer"
+}
+```
+
+That produces URLs in the form:
+
+```text
+https://cf-images-demo.mywebsite.dev/cdn-cgi/image/.../https://mywebsite.blob.core.windows.net/mycontainer/media/...
+```
+
+Without either setting, the package continues to emit the existing relative `/cdn-cgi/image/...` URL.
+
 ## Usage Without Slimsy
 
 While the Cloudflare Image URL Generator works best with Slimsy for modern responsive image patterns, you can use it directly without Slimsy by calling `GetCropUrl()` directly in your Razor views or controllers.
