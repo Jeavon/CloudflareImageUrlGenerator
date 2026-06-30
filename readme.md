@@ -90,7 +90,9 @@ services.AddUmbraco(_env, _config)
 
 https://developers.cloudflare.com/images/optimization/transformations/
 
-### 4. Optionally disable the generator for local development
+### 4. Optional configuration
+
+#### Disable the generator for local development
 
 In appsettings.json
 
@@ -108,13 +110,11 @@ Then in appsettings.production.json
 	}
 ```
 
-Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` for environments with Cloudflare
+Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` for environments with Cloudflare.
 
-### Further Options (v2.0.1+)
+#### Configure supported output formats
 
-By default the provider offloads conversion of webp and avif file types, you can configure further types, check they are supported output types https://developers.cloudflare.com/images/get-started/limits/
-
-e.g.
+By default the provider offloads conversion of webp and avif file types. You can configure further types if they are supported by Cloudflare Image Resizing.
 
 ```json
 "CloudflareImageUrlGenerator": {
@@ -122,6 +122,8 @@ e.g.
 	"CloudFlareSupportedImageFileTypes": ["webp", "avif", "jpg", "png"]
 }
 ```
+
+#### Offload all resizing to Cloudflare
 
 By default `OffloadAllResizing` is `false` and Cloudflare offloading only activates when a `format` parameter is present. When set to `true`, Cloudflare handles width/height/quality/crop for any request, even without a format parameter. If format is present but not in `CloudFlareSupportedImageFileTypes`, it stays with ImageSharp while the resize is still offloaded to Cloudflare.
 
@@ -131,6 +133,8 @@ By default `OffloadAllResizing` is `false` and Cloudflare offloading only activa
 	"OffloadAllResizing": true
 }
 ```
+
+#### Prefix the Cloudflare endpoint and/or the source URL
 
 If you want to combine both behaviors, use `AbsoluteCdnPrefix` for the Cloudflare endpoint host and `AbsoluteOriginPrefix` for the image source parameter:
 
@@ -148,7 +152,39 @@ That produces URLs in the form:
 https://cf-images-demo.mywebsite.dev/cdn-cgi/image/.../https://mywebsite.blob.core.windows.net/mycontainer/media/...
 ```
 
-Without either setting, the package continues to emit the existing relative `/cdn-cgi/image/...` URL.
+If you do not configure any of the prefix options, the package continues to emit the existing relative `/cdn-cgi/image/...` URL.
+
+You can also override the Cloudflare path prefix itself if your setup uses a different route:
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"CloudflarePathPrefix": "/custom/cloudflare/image/"
+}
+```
+
+#### Disable ImageSharp fallback for blob-style origins
+
+If your source origin is a blob store or another endpoint that cannot process ImageSharp commands, set `UseImageSharpFallback` to `false` to prevent the provider from appending ImageSharp-related parameters to the source URL:
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"UseImageSharpFallback": false
+}
+```
+
+#### Sample Cloudflare worker
+
+With the path prefix setting in place, you can also proxy the generated requests through a Cloudflare Worker. This is useful when you want to avoid exposing the private origin domain in the public URL and keep the generated URLs shorter and cleaner. The package already emits the command string and source URL in the format the worker expects, so no package code changes are required.
+
+Example:
+
+```text
+https://cf-images-demo.crumpled-dog.dev/cdn-mysite/image/w=300,h=300,format=webp,fit=cover/media/sv3liij4/laura_weatherhead.jpg?v=1dd03c7e73f8bbe
+```
+
+The worker can receive that request, split the command segment from the source URL, and forward it to your image pipeline as a `cf.image` style request. A sample worker implementation is available in [worker-example.js](worker-example.js).
 
 ## Usage Without Slimsy
 

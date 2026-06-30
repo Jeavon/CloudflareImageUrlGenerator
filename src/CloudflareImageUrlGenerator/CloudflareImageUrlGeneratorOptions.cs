@@ -9,6 +9,8 @@ namespace CloudflareImageUrlGenerator
         public bool OffloadAllResizing { get; set; } = false;
         public string? AbsoluteOriginPrefix { get; set; }
         public string? AbsoluteCdnPrefix { get; set; }
+        public string CloudflarePathPrefix { get; set; } = "/cdn-cgi/image/";
+        public bool UseImageSharpFallback { get; set; } = true;
 
     }
 }

@@ -137,8 +137,13 @@ namespace CloudflareImageUrlGenerator
                     else if (!_cloudflareImageUrlGeneratorOptions.OffloadAllResizing)
                     {
                         // Format not in CF list and OffloadAllResizing disabled — stay with ImageSharp
-                        AddHmacIfEnabled(options.ImageUrl, imageSharpCommands);
-                        return QueryHelpers.AddQueryString(options.ImageUrl, imageSharpCommands);
+                        if (_cloudflareImageUrlGeneratorOptions.UseImageSharpFallback)
+                        {
+                            AddHmacIfEnabled(options.ImageUrl, imageSharpCommands);
+                            return QueryHelpers.AddQueryString(options.ImageUrl, imageSharpCommands);
+                        }
+
+                        return options.ImageUrl;
                     }
                     // OffloadAllResizing=true: format stays in imageSharpCommands for the ImageSharp source URL
                 }
@@ -343,11 +348,24 @@ namespace CloudflareImageUrlGenerator
                 return imageSharpString;
             }
 
-            var cloudflareBasePath = string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix)
+            var cloudflarePathPrefix = string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.CloudflarePathPrefix)
                 ? "/cdn-cgi/image/"
-                : $"{_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix.TrimEnd('/')}/cdn-cgi/image/";
+                : _cloudflareImageUrlGeneratorOptions.CloudflarePathPrefix.TrimEnd('/') + "/";
+
+            var cloudflareBasePath = string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix)
+                ? cloudflarePathPrefix
+                : $"{_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix.TrimEnd('/')}{cloudflarePathPrefix}";
 
             var sourceUrl = options.ImageUrl;
+            var sourceQueryParameters = new Dictionary<string, StringValues>();
+            if (_cloudflareImageUrlGeneratorOptions.UseImageSharpFallback)
+            {
+                sourceQueryParameters = imageSharpCommands;
+            }
+            else if (imageSharpCommands.TryGetValue("v", out var versionValue))
+            {
+                sourceQueryParameters["v"] = versionValue;
+            }
             if (!string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix))
             {
                 var absoluteOriginPrefix = _cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix.TrimEnd('/');
@@ -365,7 +383,7 @@ namespace CloudflareImageUrlGenerator
             if (imageSharpCommands.Count == 0 || !imageSharpCommands.Keys.Any(k => k != "v"))
             {
                 // No actual ImageSharp processing needed — pass v (if present) for Cloudflare cache busting
-                return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, imageSharpCommands);
+                return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
             }
 
             // ImageSharp processing is needed — set quality=100 to prevent double compression
@@ -374,8 +392,12 @@ namespace CloudflareImageUrlGenerator
                 imageSharpCommands[QualityWebProcessor.Quality] = "100";
             }
 
-            AddHmacIfEnabled(sourceUrl, imageSharpCommands);
-            return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, imageSharpCommands);
+            if (_cloudflareImageUrlGeneratorOptions.UseImageSharpFallback)
+            {
+                AddHmacIfEnabled(sourceUrl, imageSharpCommands);
+            }
+
+            return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
         }
 
         private void AddHmacIfEnabled(string imageUrl, Dictionary<string, StringValues> imageSharpCommands)
