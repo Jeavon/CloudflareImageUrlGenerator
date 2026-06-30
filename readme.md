@@ -165,7 +165,7 @@ You can also override the Cloudflare path prefix itself if your setup uses a dif
 
 #### Disable ImageSharp fallback for blob-style origins
 
-If your source origin is a blob store or another endpoint that cannot process ImageSharp commands, set `UseImageSharpFallback` to `false` to prevent the provider from appending ImageSharp-related parameters to the source URL:
+If your source origin is a blob store or another endpoint that cannot process ImageSharp commands, set `UseImageSharpFallback` to `false` to prevent the provider from appending ImageSharp-related parameters to the source URL. In this mode, any ImageSharp commands that Cloudflare does not support are effectively ignored by the Cloudflare portion of the pipeline, so the final output can differ from pure or hybrid ImageSharp rendering. In the worker example below, you would also typically set `AbsoluteOriginPrefix` so the generated URL can point to your private origin without exposing it directly:
 
 ```json
 "CloudflareImageUrlGenerator": {
