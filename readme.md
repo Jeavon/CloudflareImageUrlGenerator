@@ -149,7 +149,7 @@ If you want to combine both behaviors, use `AbsoluteCdnPrefix` for the Cloudflar
 That produces URLs in the form:
 
 ```text
-https://cf-images-demo.mywebsite.dev/cdn-cgi/image/.../https://mywebsite.blob.core.windows.net/mycontainer/media/...
+https://cf-images-demo.umbraco-images.dev/cdn-cgi/image/.../https://mywebsite.blob.core.windows.net/mycontainer/media/...
 ```
 
 If you do not configure any of the prefix options, the package continues to emit the existing relative `/cdn-cgi/image/...` URL.
@@ -191,15 +191,17 @@ If you want to protect the public transformation URLs in the same spirit as Imag
 
 With the path prefix setting in place, you can also proxy the generated requests through a Cloudflare Worker. This is useful when you want to avoid exposing the private origin domain in the public URL and keep the generated URLs shorter and cleaner. In this worker-based setup, Cloudflare Image Resizing is optional: if the worker forwards the request to your own image pipeline or origin, you do not need Cloudflare Image Resizing enabled for the transformation step itself.
 
+> **Do not use `/cdn-cgi/` for a custom worker.** This path is reserved by Cloudflare for its own built-in features. If **Images → Transformations** (Image Resizing) is enabled on your zone, Cloudflare intercepts `/cdn-cgi/image/*` requests natively at the edge before your Worker route ever runs — your Worker's logs won't show anything, and any signed-URL checks are silently bypassed, even though the image still appears resized. Always set `CloudflarePathPrefix` (and the worker's `PUBLIC_PATH_PREFIX`) to a non-reserved path, such as `/cdn-mysite/image/`, when using a custom worker.
+
 Example:
 
 ```text
-https://cf-images-demo.crumpled-dog.dev/cdn-cgi/image/w=300,h=300,format=webp,fit=cover/media/sv3liij4/laura_weatherhead.jpg?v=1dd03c7e73f8bbe
+https://cf-images-demo.umbraco-images.dev/cdn-mysite/image/w=300,h=300,format=webp,fit=cover/media/sv3liij4/laura_weatherhead.jpg?v=1dd03c7e73f8bbe
 ```
 
 The worker can receive that request, split the command segment from the source URL, and forward it to your image pipeline as a `cf.image` style request. A sample worker implementation is available in [worker-example.js](worker-example.js), which supports all of the generator's features:
 
-- **Path prefix parsing** — `PUBLIC_PATH_PREFIX` mirrors `CloudflarePathPrefix` and defaults to `cdn-cgi/image/`.
+- **Path prefix parsing** — `PUBLIC_PATH_PREFIX` mirrors `CloudflarePathPrefix`. Set it to a non-reserved path (e.g. `cdn-mysite/image/`) rather than the package's default `cdn-cgi/image/`, which is only appropriate when relying on Cloudflare's native Image Resizing instead of a custom worker.
 - **Private origin proxying** — `PRIVATE_ORIGIN_BASE_URL` and `PRIVATE_ORIGIN_CONTAINER_PATH` map the public path to a private origin (e.g. blob storage), matching `AbsoluteOriginPrefix`.
 - **Signature-only mode** — leave `PRIVATE_ORIGIN_BASE_URL` empty (`""`) to have the worker fetch from the requesting host itself instead of a private origin. This is useful if you only want the worker to verify signed URLs (`EnableSignedUrls`) in front of Cloudflare Image Resizing on the same site, without proxying to a separate origin.
 - **Signed URL verification** — `ENABLE_SIGNED_URLS`, `SIGNED_URL_SECRET`, `SIGNED_URL_QUERY_PARAMETER_NAME`, `SIGNED_URL_EXPIRY_QUERY_PARAMETER_NAME` and `SIGNED_URL_TTL_SECONDS` mirror the `EnableSignedUrls`/`SignedUrlSecret`/`SignedUrlQueryParameterName`/`SignedUrlExpiryQueryParameterName`/`SignedUrlTtlSeconds` options above. `SIGNED_URL_SECRET` can also be supplied via the `SIGNED_URL_SECRET` environment variable/binding instead of hardcoding it in the worker source.
