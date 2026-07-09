@@ -173,19 +173,36 @@ If your source origin is a blob store or another endpoint that cannot process Im
 	"UseImageSharpFallback": false
 }
 ```
+#### Sign Cloudflare transformation URLs
 
+If you want to protect the public transformation URLs in the same spirit as ImageSharp's HMAC flow, enable signed URLs. By default the signature is long-lived and cache-friendly, so the URL can remain stable until you rotate the shared secret. This is the better fit when you want Cloudflare/CDN caching to work for as long as possible. If you want a shorter-lived token for tighter access control, set `SignedUrlTtlSeconds` to a positive value and the package will include an expiry timestamp as well.
+
+```json
+"CloudflareImageUrlGenerator": {
+  "Enabled": true,
+  "EnableSignedUrls": true,
+  "SignedUrlSecret": "replace-with-a-long-random-secret",
+  "SignedUrlQueryParameterName": "sig",
+  "SignedUrlExpiryQueryParameterName": "expires",
+  "SignedUrlTtlSeconds": 300
+}
+```
 #### Sample Cloudflare worker
 
-With the path prefix setting in place, you can also proxy the generated requests through a Cloudflare Worker. This is useful when you want to avoid exposing the private origin domain in the public URL and keep the generated URLs shorter and cleaner. 
+With the path prefix setting in place, you can also proxy the generated requests through a Cloudflare Worker. This is useful when you want to avoid exposing the private origin domain in the public URL and keep the generated URLs shorter and cleaner. In this worker-based setup, Cloudflare Image Resizing is optional: if the worker forwards the request to your own image pipeline or origin, you do not need Cloudflare Image Resizing enabled for the transformation step itself.
 
 Example:
 
 ```text
-https://cf-images-demo.crumpled-dog.dev/cdn-mysite/image/w=300,h=300,format=webp,fit=cover/media/sv3liij4/laura_weatherhead.jpg?v=1dd03c7e73f8bbe
+https://cf-images-demo.crumpled-dog.dev/cdn-cgi/image/w=300,h=300,format=webp,fit=cover/media/sv3liij4/laura_weatherhead.jpg?v=1dd03c7e73f8bbe
 ```
 
-The worker can receive that request, split the command segment from the source URL, and forward it to your image pipeline as a `cf.image` style request. A sample worker implementation is available in [worker-example.js](worker-example.js).
+The worker can receive that request, split the command segment from the source URL, and forward it to your image pipeline as a `cf.image` style request. A sample worker implementation is available in [worker-example.js](worker-example.js), which supports all of the generator's features:
 
+- **Path prefix parsing** — `PUBLIC_PATH_PREFIX` mirrors `CloudflarePathPrefix` and defaults to `cdn-cgi/image/`.
+- **Private origin proxying** — `PRIVATE_ORIGIN_BASE_URL` and `PRIVATE_ORIGIN_CONTAINER_PATH` map the public path to a private origin (e.g. blob storage), matching `AbsoluteOriginPrefix`.
+- **Signature-only mode** — leave `PRIVATE_ORIGIN_BASE_URL` empty (`""`) to have the worker fetch from the requesting host itself instead of a private origin. This is useful if you only want the worker to verify signed URLs (`EnableSignedUrls`) in front of Cloudflare Image Resizing on the same site, without proxying to a separate origin.
+- **Signed URL verification** — `ENABLE_SIGNED_URLS`, `SIGNED_URL_SECRET`, `SIGNED_URL_QUERY_PARAMETER_NAME`, `SIGNED_URL_EXPIRY_QUERY_PARAMETER_NAME` and `SIGNED_URL_TTL_SECONDS` mirror the `EnableSignedUrls`/`SignedUrlSecret`/`SignedUrlQueryParameterName`/`SignedUrlExpiryQueryParameterName`/`SignedUrlTtlSeconds` options above. `SIGNED_URL_SECRET` can also be supplied via the `SIGNED_URL_SECRET` environment variable/binding instead of hardcoding it in the worker source.
 
 For this worker example, your package configuration would look like this:
 

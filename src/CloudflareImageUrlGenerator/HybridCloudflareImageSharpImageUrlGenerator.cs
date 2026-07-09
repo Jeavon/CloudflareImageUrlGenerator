@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -383,7 +385,7 @@ namespace CloudflareImageUrlGenerator
             if (imageSharpCommands.Count == 0 || !imageSharpCommands.Keys.Any(k => k != "v"))
             {
                 // No actual ImageSharp processing needed — pass v (if present) for Cloudflare cache busting
-                return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
+                return BuildCloudflareUrl(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
             }
 
             // ImageSharp processing is needed — set quality=100 to prevent double compression
@@ -397,7 +399,7 @@ namespace CloudflareImageUrlGenerator
                 AddHmacIfEnabled(sourceUrl, imageSharpCommands);
             }
 
-            return QueryHelpers.AddQueryString(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
+            return BuildCloudflareUrl(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
         }
 
         private static string EnsureTrailingSlash(string value)
@@ -454,6 +456,46 @@ namespace CloudflareImageUrlGenerator
             }
 
             return $"{leftTrimmed}/{rightTrimmed}";
+        }
+
+        private string BuildCloudflareUrl(string cloudflareUrl, Dictionary<string, StringValues> sourceQueryParameters)
+        {
+            var urlWithQuery = QueryHelpers.AddQueryString(cloudflareUrl, sourceQueryParameters);
+
+            if (!_cloudflareImageUrlGeneratorOptions.EnableSignedUrls ||
+                string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.SignedUrlSecret))
+            {
+                return urlWithQuery;
+            }
+
+            var uri = new Uri(urlWithQuery, UriKind.RelativeOrAbsolute);
+            var pathAndQuery = uri.IsAbsoluteUri ? uri.PathAndQuery : uri.OriginalString;
+            var payloadParts = new List<string> { pathAndQuery };
+            string? expires = null;
+
+            if (_cloudflareImageUrlGeneratorOptions.SignedUrlTtlSeconds > 0)
+            {
+                expires = DateTimeOffset.UtcNow.AddSeconds(_cloudflareImageUrlGeneratorOptions.SignedUrlTtlSeconds).ToUnixTimeSeconds().ToString();
+                payloadParts.Insert(0, expires);
+            }
+
+            var payload = string.Join(":", payloadParts);
+            var signature = CreateSignature(_cloudflareImageUrlGeneratorOptions.SignedUrlSecret, payload);
+            var signedUrl = QueryHelpers.AddQueryString(urlWithQuery, _cloudflareImageUrlGeneratorOptions.SignedUrlQueryParameterName, signature);
+
+            if (!string.IsNullOrWhiteSpace(expires))
+            {
+                signedUrl = QueryHelpers.AddQueryString(signedUrl, _cloudflareImageUrlGeneratorOptions.SignedUrlExpiryQueryParameterName, expires);
+            }
+
+            return signedUrl;
+        }
+
+        private static string CreateSignature(string secret, string payload)
+        {
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+            return Convert.ToHexString(hash).ToLowerInvariant();
         }
 
         private void AddHmacIfEnabled(string imageUrl, Dictionary<string, StringValues> imageSharpCommands)

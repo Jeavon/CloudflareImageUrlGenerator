@@ -1,7 +1,69 @@
-const PUBLIC_PATH_PREFIX = "cdn-mysite/image/";
+const PUBLIC_PATH_PREFIX = "cdn-cgi/image/";
 const PRIVATE_ORIGIN_BASE_URL = "https://mysite.blob.core.windows.net";
 const PRIVATE_ORIGIN_CONTAINER_PATH = "/mycontainer";
 const ENABLE_WORKER_LOGGING = true;
+const ENABLE_SIGNED_URLS = false;
+const SIGNED_URL_SECRET = "replace-me";
+const SIGNED_URL_QUERY_PARAMETER_NAME = "sig";
+const SIGNED_URL_EXPIRY_QUERY_PARAMETER_NAME = "expires";
+const SIGNED_URL_TTL_SECONDS = 0;
+
+async function createSignature(secret, payload) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function verifySignedRequest(url, secret) {
+  if (!ENABLE_SIGNED_URLS || !secret) {
+    return true;
+  }
+
+  const signature = url.searchParams.get(SIGNED_URL_QUERY_PARAMETER_NAME);
+  const expiresValue = url.searchParams.get(SIGNED_URL_EXPIRY_QUERY_PARAMETER_NAME);
+  if (!signature) {
+    return false;
+  }
+
+  const verificationUrl = new URL(url.toString());
+  verificationUrl.searchParams.delete(SIGNED_URL_QUERY_PARAMETER_NAME);
+  verificationUrl.searchParams.delete(SIGNED_URL_EXPIRY_QUERY_PARAMETER_NAME);
+
+  let payload = `${verificationUrl.pathname}${verificationUrl.search}`;
+
+  if (SIGNED_URL_TTL_SECONDS > 0) {
+    if (!expiresValue) {
+      return false;
+    }
+
+    const expires = Number(expiresValue);
+    if (!Number.isFinite(expires) || expires <= Math.floor(Date.now() / 1000)) {
+      return false;
+    }
+
+    payload = `${expires}:${payload}`;
+  }
+  const expectedSignature = await createSignature(secret, payload);
+
+  const encoder = new TextEncoder();
+  const signatureBytes = encoder.encode(signature);
+  const expectedSignatureBytes = encoder.encode(expectedSignature);
+  if (signatureBytes.length !== expectedSignatureBytes.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(signatureBytes, expectedSignatureBytes);
+}
 
 function logWorker(message, details) {
   if (!ENABLE_WORKER_LOGGING) {
@@ -20,6 +82,12 @@ export default {
     const url = new URL(request.url);
 
     logWorker("worker request url", url.toString());
+
+    const signedUrlSecret = env.SIGNED_URL_SECRET || SIGNED_URL_SECRET;
+    if (!(await verifySignedRequest(url, signedUrlSecret))) {
+      logWorker("worker rejected unsigned or expired request");
+      return new Response("Forbidden", { status: 403 });
+    }
 
     // Parse the command segment from the public URL.
     const path = url.pathname.replace(/^\/+/, '');
@@ -41,10 +109,16 @@ export default {
       return new Response("Not Found", { status: 404 });
     }
 
-    // Map the public path to your private origin.
-    const originPath = `${PRIVATE_ORIGIN_CONTAINER_PATH}/${sourcePath}`;
-    const originUrl = new URL(`${originPath}${url.search}`, PRIVATE_ORIGIN_BASE_URL);
+    // Map the public path to your private origin. If no private origin is configured
+    // (e.g. the worker is only used to verify signed URLs), fall back to the
+    // requesting host so the worker can still resize images from the same site.
+    const originBaseUrl = PRIVATE_ORIGIN_BASE_URL || url.origin;
+    const originPath = PRIVATE_ORIGIN_BASE_URL
+      ? `${PRIVATE_ORIGIN_CONTAINER_PATH}/${sourcePath}`
+      : `/${sourcePath}`;
+    const originUrl = new URL(`${originPath}${url.search}`, originBaseUrl);
 
+    logWorker("worker origin base url", originBaseUrl);
     logWorker("worker origin path", originPath);
     logWorker("worker origin url", originUrl.toString());
 
