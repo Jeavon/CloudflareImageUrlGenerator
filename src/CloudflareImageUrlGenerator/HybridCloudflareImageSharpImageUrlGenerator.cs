@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.WebUtilities;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using SixLabors.ImageSharp.Web;
@@ -12,7 +14,7 @@ using Umbraco.Cms.Imaging.ImageSharp.Media;
 
 namespace CloudflareImageUrlGenerator
 {
-    public sealed class HybridCloudflareImageSharpImageUrlGenerator : IImageUrlGenerator 
+    public sealed class HybridCloudflareImageSharpImageUrlGenerator : IImageUrlGenerator
     {
         public IEnumerable<string> SupportedImageFileTypes { get; }
         private SixLabors.ImageSharp.Configuration _configuration { get; }
@@ -44,6 +46,10 @@ namespace CloudflareImageUrlGenerator
             var imageSharpString = new ImageSharpImageUrlGenerator(_configuration, _requestAuthorizationUtilities, _imageSharpMiddlewareOptions).GetImageUrl(options);
 
             Dictionary<string, StringValues> imageSharpCommands = QueryHelpers.ParseQuery(new Uri(fakeBaseUri, imageSharpString).Query);
+
+            // Strip the HMAC token - it was computed for the original params and will be invalid
+            // after we move commands to Cloudflare. We recompute it at each return point.
+            imageSharpCommands.Remove(RequestAuthorizationUtilities.TokenCommand);
 
             int? sourceWidth = null;
             int? sourceHeight = null;
@@ -118,96 +124,214 @@ namespace CloudflareImageUrlGenerator
                 }
             }
 
-            // remove format from ImageSharp and add it to Cloudflare, additionally set ImageSharp quality to 100 (as source) and add quality parameter to Cloudflare 
-            if (imageSharpCommands.ContainsKey(FormatWebProcessor.Format))
+            // remove format from ImageSharp and add it to Cloudflare, additionally set ImageSharp quality to 100 (as source) and add quality parameter to Cloudflare
+            if (imageSharpCommands.ContainsKey(FormatWebProcessor.Format) || _cloudflareImageUrlGeneratorOptions.OffloadAllResizing)
             {
-                var format = imageSharpCommands[FormatWebProcessor.Format];
-
-                if (_cloudflareImageUrlGeneratorOptions.CloudFlareSupportedImageFileTypes.Contains(format[0]))
+                string? cfFormat = null;
+                if (imageSharpCommands.ContainsKey(FormatWebProcessor.Format))
                 {
-                    imageSharpCommands.Remove(FormatWebProcessor.Format);
-                    var addFit = false;
-
-                    // only offload crop mode resizing for now
-                    if (options.ImageCropMode is null or ImageCropMode.Crop)
+                    var format = imageSharpCommands[FormatWebProcessor.Format];
+                    if (_cloudflareImageUrlGeneratorOptions.CloudFlareSupportedImageFileTypes.Contains(format[0]))
                     {
-
-                        if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
+                        cfFormat = format[0];
+                        imageSharpCommands.Remove(FormatWebProcessor.Format);
+                    }
+                    else if (!_cloudflareImageUrlGeneratorOptions.OffloadAllResizing)
+                    {
+                        // Format not in CF list and OffloadAllResizing disabled — stay with ImageSharp
+                        if (_cloudflareImageUrlGeneratorOptions.UseImageSharpFallback)
                         {
-                            if (resizeSourceAction == ResizeSourceAction.Width)
+                            AddHmacIfEnabled(options.ImageUrl, imageSharpCommands);
+                            return QueryHelpers.AddQueryString(options.ImageUrl, imageSharpCommands);
+                        }
+
+                        return options.ImageUrl;
+                    }
+                    // OffloadAllResizing=true: format stays in imageSharpCommands for the ImageSharp source URL
+                }
+
+                var addFit = false;
+                string? fitOverride = null;
+
+                if (options.ImageCropMode is null or ImageCropMode.Crop)
+                {
+                    // Remove mode and anchor — Cloudflare handles crop via cover fit + gravity
+                    imageSharpCommands.Remove(ResizeWebProcessor.Mode);
+                    imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
+
+                    if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
+                    {
+                        if (resizeSourceAction == ResizeSourceAction.Width)
+                        {
+                            var width = imageSharpCommands[ResizeWebProcessor.Width];
+                            imageSharpCommands[ResizeWebProcessor.Width] = sourceResize.ToString();
+                            cfCommands.Add(CloudflareCommands.Width, width);
+                            addFit = true;
+                        }
+                        else
+                        {
+                            if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
                             {
-                                var width = imageSharpCommands[ResizeWebProcessor.Width];
-                                imageSharpCommands[ResizeWebProcessor.Width] = sourceResize.ToString();
                                 cfCommands.Add(CloudflareCommands.Width, width);
                                 addFit = true;
                             }
-                            else
+                        }
+                    }
+
+                    if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Height))
+                    {
+                        if (resizeSourceAction == ResizeSourceAction.Height)
+                        {
+                            var height = imageSharpCommands[ResizeWebProcessor.Height];
+                            imageSharpCommands[ResizeWebProcessor.Height] = sourceResize.ToString();
+                            cfCommands.Add(CloudflareCommands.Height, height);
+                            addFit = true;
+                        }
+                        else
+                        {
+                            if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
                             {
-                                if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                                var h = Convert.ToInt32(height);
+                                if (h > 0)
                                 {
-                                    cfCommands.Add(CloudflareCommands.Width, width);
+                                    cfCommands.Add(CloudflareCommands.Height, h.ToString());
                                     addFit = true;
                                 }
                             }
                         }
-
-                        if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Height))
-                        {
-                            if (resizeSourceAction == ResizeSourceAction.Height)
-                            {
-                                var height = imageSharpCommands[ResizeWebProcessor.Height];
-                                imageSharpCommands[ResizeWebProcessor.Height] = sourceResize.ToString();
-                                cfCommands.Add(CloudflareCommands.Height, height);
-                                addFit = true;
-                            }
-                            else
-                            {
-                                if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
-                                {
-                                    var h = Convert.ToInt32(height);
-                                    if (h > 0)
-                                    {
-                                        cfCommands.Add(CloudflareCommands.Height, h.ToString());
-                                        addFit = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (options.FocalPoint is not null)
-                        {
-                            if (imageSharpCommands.Remove(ResizeWebProcessor.Xy))
-                            {
-                                cfCommands.Add(CloudflareCommands.Gravity, FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
-                                addFit = true;
-                            }
-                        }
                     }
 
-                    cfCommands.Add(FormatWebProcessor.Format, format[0]);
-
-                    if (imageSharpCommands.ContainsKey(QualityWebProcessor.Quality))
+                    if (options.FocalPoint is not null)
                     {
-                        var quality = imageSharpCommands[QualityWebProcessor.Quality];
-                        imageSharpCommands[QualityWebProcessor.Quality] = "100";
-                        cfCommands.Add(CloudflareCommands.Quality, quality);
-                    }
-
-                    if (addFit)
-                    {
-                        if (cfCommands.ContainsKey(CloudflareCommands.Width) && cfCommands.ContainsKey(CloudflareCommands.Height))
+                        if (imageSharpCommands.Remove(ResizeWebProcessor.Xy))
                         {
-                            cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Cover);
-                        }
-                        else
-                        {
-                            cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Contain);
+                            cfCommands.Add(CloudflareCommands.Gravity, FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
+                            addFit = true;
                         }
                     }
                 }
-                else
+                else if (options.ImageCropMode is ImageCropMode.Max)
                 {
-                    return QueryHelpers.AddQueryString(options.ImageUrl, imageSharpCommands);
+                    imageSharpCommands.Remove(ResizeWebProcessor.Mode);
+                    imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
+
+                    if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                    {
+                        cfCommands.Add(CloudflareCommands.Width, width);
+                        addFit = true;
+                    }
+
+                    if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
+                    {
+                        var h = Convert.ToInt32(height);
+                        if (h > 0)
+                        {
+                            cfCommands.Add(CloudflareCommands.Height, h.ToString());
+                            addFit = true;
+                        }
+                    }
+
+                    fitOverride = CloudflareCommands.ScaleDown;
+                }
+                else if (options.ImageCropMode is ImageCropMode.Min)
+                {
+                    imageSharpCommands.Remove(ResizeWebProcessor.Mode);
+                    imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
+
+                    if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                    {
+                        cfCommands.Add(CloudflareCommands.Width, width);
+                        addFit = true;
+                    }
+
+                    if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
+                    {
+                        var h = Convert.ToInt32(height);
+                        if (h > 0)
+                        {
+                            cfCommands.Add(CloudflareCommands.Height, h.ToString());
+                            addFit = true;
+                        }
+                    }
+
+                    fitOverride = CloudflareCommands.Contain;
+                }
+                else if (options.ImageCropMode is ImageCropMode.Pad or ImageCropMode.BoxPad)
+                {
+                    if (imageSharpCommands.ContainsKey(BackgroundColorWebProcessor.Color))
+                    {
+                        // bgcolor present: keep rmode/width/height/bgcolor in imageSharpCommands so ImageSharp
+                        // handles the pad+colour. Format and quality are still offloaded to Cloudflare below.
+                    }
+                    else
+                    {
+                        imageSharpCommands.Remove(ResizeWebProcessor.Mode);
+                        imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
+
+                        if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                        {
+                            cfCommands.Add(CloudflareCommands.Width, width);
+                            addFit = true;
+                        }
+
+                        if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
+                        {
+                            var h = Convert.ToInt32(height);
+                            if (h > 0)
+                            {
+                                cfCommands.Add(CloudflareCommands.Height, h.ToString());
+                                addFit = true;
+                            }
+                        }
+
+                        fitOverride = CloudflareCommands.Pad;
+                    }
+                }
+                else if (options.ImageCropMode is ImageCropMode.Stretch)
+                {
+                    imageSharpCommands.Remove(ResizeWebProcessor.Mode);
+                    imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
+
+                    if (imageSharpCommands.Remove(ResizeWebProcessor.Width, out var width))
+                    {
+                        cfCommands.Add(CloudflareCommands.Width, width);
+                    }
+
+                    if (imageSharpCommands.Remove(ResizeWebProcessor.Height, out var height))
+                    {
+                        var h = Convert.ToInt32(height);
+                        if (h > 0)
+                        {
+                            cfCommands.Add(CloudflareCommands.Height, h.ToString());
+                        }
+                    }
+                    // No fit parameter — Cloudflare stretches when both w and h are set without fit
+                }
+
+                if (cfFormat != null)
+                {
+                    cfCommands.Add(FormatWebProcessor.Format, cfFormat);
+                }
+
+                if (imageSharpCommands.Remove(QualityWebProcessor.Quality, out var quality))
+                {
+                    cfCommands.Add(CloudflareCommands.Quality, quality);
+                }
+
+                if (addFit)
+                {
+                    if (fitOverride is not null)
+                    {
+                        cfCommands.Add(CloudflareCommands.Fit, fitOverride);
+                    }
+                    else if (cfCommands.ContainsKey(CloudflareCommands.Width) && cfCommands.ContainsKey(CloudflareCommands.Height))
+                    {
+                        cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Cover);
+                    }
+                    else
+                    {
+                        cfCommands.Add(CloudflareCommands.Fit, CloudflareCommands.Contain);
+                    }
                 }
             }
 
@@ -226,7 +350,165 @@ namespace CloudflareImageUrlGenerator
                 return imageSharpString;
             }
 
-            return  QueryHelpers.AddQueryString("/cdn-cgi/image/" + cfCommandString + options.ImageUrl, imageSharpCommands);
+            var cloudflarePathPrefix = EnsureTrailingSlash(NormalizePathPrefix(_cloudflareImageUrlGeneratorOptions.CloudflarePathPrefix));
+
+            var cloudflareBasePath = string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix)
+                ? cloudflarePathPrefix
+                : JoinUrlSegments(NormalizeUrlPrefix(_cloudflareImageUrlGeneratorOptions.AbsoluteCdnPrefix), cloudflarePathPrefix);
+
+            var sourceUrl = options.ImageUrl;
+            var sourceQueryParameters = new Dictionary<string, StringValues>();
+            if (_cloudflareImageUrlGeneratorOptions.UseImageSharpFallback)
+            {
+                sourceQueryParameters = imageSharpCommands;
+            }
+            else if (imageSharpCommands.TryGetValue("v", out var versionValue))
+            {
+                sourceQueryParameters["v"] = versionValue;
+            }
+            if (!string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix))
+            {
+                var absoluteOriginPrefix = NormalizeUrlPrefix(_cloudflareImageUrlGeneratorOptions.AbsoluteOriginPrefix);
+                if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out _) &&
+                    !sourceUrl.StartsWith(absoluteOriginPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    sourceUrl = JoinUrlSegments(absoluteOriginPrefix, sourceUrl.TrimStart('/'));
+                }
+            }
+
+            var normalizedSourceUrl = sourceUrl;
+
+            var cloudflareUrlSuffix = string.IsNullOrEmpty(cfCommandString)
+                ? normalizedSourceUrl
+                : JoinUrlSegments(cfCommandString, normalizedSourceUrl);
+
+            if (imageSharpCommands.Count == 0 || !imageSharpCommands.Keys.Any(k => k != "v"))
+            {
+                // No actual ImageSharp processing needed — pass v (if present) for Cloudflare cache busting
+                return BuildCloudflareUrl(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
+            }
+
+            // ImageSharp processing is needed — set quality=100 to prevent double compression
+            if (cfCommands.ContainsKey(CloudflareCommands.Quality))
+            {
+                imageSharpCommands[QualityWebProcessor.Quality] = "100";
+            }
+
+            if (_cloudflareImageUrlGeneratorOptions.UseImageSharpFallback)
+            {
+                AddHmacIfEnabled(sourceUrl, imageSharpCommands);
+            }
+
+            return BuildCloudflareUrl(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
+        }
+
+        private static string EnsureTrailingSlash(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "/";
+            }
+
+            return value.EndsWith('/') ? value : value + "/";
+        }
+
+        private static string NormalizePathPrefix(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "/cdn-cgi/image";
+            }
+
+            var trimmed = value.Trim().Replace("\\", "/");
+            var segments = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return "/" + string.Join("/", segments);
+        }
+
+        private static string NormalizeUrlPrefix(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var trimmed = value.Trim().Replace("\\", "/");
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
+            {
+                return $"{absoluteUri.GetLeftPart(UriPartial.Authority)}{absoluteUri.AbsolutePath.TrimEnd('/')}";
+            }
+
+            return trimmed.TrimEnd('/');
+        }
+
+        private static string JoinUrlSegments(string left, string right)
+        {
+            var leftTrimmed = left?.TrimEnd('/') ?? string.Empty;
+            var rightTrimmed = right?.TrimStart('/') ?? string.Empty;
+
+            if (string.IsNullOrEmpty(leftTrimmed))
+            {
+                return rightTrimmed;
+            }
+
+            if (string.IsNullOrEmpty(rightTrimmed))
+            {
+                return leftTrimmed;
+            }
+
+            return $"{leftTrimmed}/{rightTrimmed}";
+        }
+
+        private string BuildCloudflareUrl(string cloudflareUrl, Dictionary<string, StringValues> sourceQueryParameters)
+        {
+            var urlWithQuery = QueryHelpers.AddQueryString(cloudflareUrl, sourceQueryParameters);
+
+            if (!_cloudflareImageUrlGeneratorOptions.EnableSignedUrls ||
+                string.IsNullOrWhiteSpace(_cloudflareImageUrlGeneratorOptions.SignedUrlSecret))
+            {
+                return urlWithQuery;
+            }
+
+            var uri = new Uri(urlWithQuery, UriKind.RelativeOrAbsolute);
+            var pathAndQuery = uri.IsAbsoluteUri ? uri.PathAndQuery : uri.OriginalString;
+            var payloadParts = new List<string> { pathAndQuery };
+            string? expires = null;
+
+            if (_cloudflareImageUrlGeneratorOptions.SignedUrlTtlSeconds > 0)
+            {
+                expires = DateTimeOffset.UtcNow.AddSeconds(_cloudflareImageUrlGeneratorOptions.SignedUrlTtlSeconds).ToUnixTimeSeconds().ToString();
+                payloadParts.Insert(0, expires);
+            }
+
+            var payload = string.Join(":", payloadParts);
+            var signature = CreateSignature(_cloudflareImageUrlGeneratorOptions.SignedUrlSecret, payload);
+            var signedUrl = QueryHelpers.AddQueryString(urlWithQuery, _cloudflareImageUrlGeneratorOptions.SignedUrlQueryParameterName, signature);
+
+            if (!string.IsNullOrWhiteSpace(expires))
+            {
+                signedUrl = QueryHelpers.AddQueryString(signedUrl, _cloudflareImageUrlGeneratorOptions.SignedUrlExpiryQueryParameterName, expires);
+            }
+
+            return signedUrl;
+        }
+
+        private static string CreateSignature(string secret, string payload)
+        {
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+            return Convert.ToHexString(hash).ToLowerInvariant();
+        }
+
+        private void AddHmacIfEnabled(string imageUrl, Dictionary<string, StringValues> imageSharpCommands)
+        {
+            if (_imageSharpMiddlewareOptions.Value.HMACSecretKey.Length != 0)
+            {
+                var uri = QueryHelpers.AddQueryString(imageUrl, imageSharpCommands);
+                var token = _requestAuthorizationUtilities.ComputeHMAC(uri, CommandHandling.Sanitize);
+                if (!string.IsNullOrEmpty(token))
+                {
+                    imageSharpCommands[RequestAuthorizationUtilities.TokenCommand] = token;
+                }
+            }
         }
     }
 

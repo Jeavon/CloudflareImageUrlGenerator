@@ -6,20 +6,47 @@ Currently the approach is "hybrid" with some commands offloaded to Cloudflare an
 
 When implemented calls to GetCropUrl will generate Urls using this generator when the "format" parameter is present.
 
+### Offloaded to Cloudflare Image Resizing
+
+| ImageSharp command | Cloudflare command | Notes |
+|---|---|---|
+| `format` | `format` | Only when format is in `CloudFlareSupportedImageFileTypes` |
+| `width` | `w` | |
+| `height` | `h` | |
+| `quality` | `quality` | ImageSharp source is set to `quality=100`; Cloudflare applies the requested quality |
+| `xy` (focal point) | `gravity` | Expressed as `{left}x{top}` fractions; only for `crop`/default mode |
+| `rxy` (crop coordinates) | `trim` | Pixel-based `top;right;bottom;left` |
+| `autoOrient` | _(removed)_ | Cloudflare handles EXIF auto-orientation by default |
+| `rmode=crop` (default) | `fit=cover` | Crops to fill both dimensions |
+| `rmode=max` | `fit=scale-down` | Shrinks to fit, never enlarges |
+| `rmode=min` | `fit=contain` | Fits within dimensions, may be smaller |
+| `rmode=pad` / `rmode=boxpad` | `fit=pad` | Letterboxes with white/transparent background **only when no custom bgcolor is set** |
+| `rmode=pad` / `rmode=boxpad` with `bgcolor` | _(no fit/width/height in CF)_ | Cloudflare handles format+quality; ImageSharp handles the pad+bgcolor in the source image |
+| `rmode=stretch` | _(no fit param)_ | Stretches to exact dimensions |
+
+### Remaining with ImageSharp.Web (not offloaded)
+
+| ImageSharp command | Notes |
+|---|---|
+| `bgcolor` with `rmode=pad`/`boxpad` | Pad sizing (rmode/width/height/bgcolor) stays with ImageSharp to preserve the custom colour; Cloudflare still handles format and quality |
+| Any other `furtherOptions` | Custom or unrecognised commands stay in the ImageSharp source URL |
+
+When remaining ImageSharp commands are present in the source URL and `HMACSecretKey` is configured, a valid HMAC token is automatically appended to the source URL.
+
 It works very well with [Slimsy v4.1+](https://github.com/Jeavon/Slimsy) to offer avif format images as the primary source for modern browsers.
 
-**For Umbraco v14 use v3.x**
-This Url Generator will **not work with the HMACSecretKey** due to the path being different so ensure that's not enabled
+**For Umbraco v17 & v18 use v4.x**
+This Url Generator **supports HMACSecretKey if enabled** 
 
 ```
-dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 3.0.0
+dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 4.*
 ```
 
 **For Umbraco v12 & v13+ please use v2.x**
 This Url Generator will **not work with the HMACSecretKey** due to the path being different so ensure that's not enabled
 
 ```
-dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.2.0
+dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version 2.*
 ```
 
 **For Umbraco v10 & v11 please use v1.x**
@@ -61,9 +88,11 @@ services.AddUmbraco(_env, _config)
 
 ### 3. Enable Image Resizing on Cloudflare
 
-https://developers.cloudflare.com/images/image-resizing/enable-image-resizing/
+https://developers.cloudflare.com/images/optimization/transformations/
 
-### 4. Optionally disable the generator for local development
+### 4. Optional configuration
+
+#### Disable the generator for local development
 
 In appsettings.json
 
@@ -81,13 +110,11 @@ Then in appsettings.production.json
 	}
 ```
 
-Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` for environments with Cloudflare
+Or use the environment variable `CloudflareImageUrlGenerator__Enabled` : `true` for environments with Cloudflare.
 
-### Further Options (v2.0.1+)
+#### Configure supported output formats
 
-By default the provider offloads conversion of webp and avif file types, you can configure further types, check they are supported output types https://developers.cloudflare.com/images/image-resizing/format-limitations/
-
-e.g.
+By default the provider offloads conversion of webp and avif file types. You can configure further types if they are supported by Cloudflare Image Resizing.
 
 ```json
 "CloudflareImageUrlGenerator": {
@@ -96,3 +123,208 @@ e.g.
 }
 ```
 
+#### Offload all resizing to Cloudflare
+
+By default `OffloadAllResizing` is `false` and Cloudflare offloading only activates when a `format` parameter is present. When set to `true`, Cloudflare handles width/height/quality/crop for any request, even without a format parameter. If format is present but not in `CloudFlareSupportedImageFileTypes`, it stays with ImageSharp while the resize is still offloaded to Cloudflare.
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"OffloadAllResizing": true
+}
+```
+
+#### Prefix the Cloudflare endpoint and/or the source URL
+
+If you want to combine both behaviors, use `AbsoluteCdnPrefix` for the Cloudflare endpoint host and `AbsoluteOriginPrefix` for the image source parameter:
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"AbsoluteCdnPrefix": "https://cf-images-demo.mywebsite.dev",
+	"AbsoluteOriginPrefix": "https://mywebsite.blob.core.windows.net/mycontainer"
+}
+```
+
+That produces URLs in the form:
+
+```text
+https://cf-images-demo.umbraco-images.dev/cdn-cgi/image/.../https://mywebsite.blob.core.windows.net/mycontainer/media/...
+```
+
+If you do not configure any of the prefix options, the package continues to emit the existing relative `/cdn-cgi/image/...` URL.
+
+You can also override the Cloudflare path prefix itself if your setup uses a different route:
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"CloudflarePathPrefix": "/custom/cloudflare/image/"
+}
+```
+
+#### Disable ImageSharp fallback for blob-style origins
+
+If your source origin is a blob store or another endpoint that cannot process ImageSharp commands, set `UseImageSharpFallback` to `false` to prevent the provider from appending ImageSharp-related parameters to the source URL. In this mode, any ImageSharp commands that Cloudflare does not support are effectively ignored by the Cloudflare portion of the pipeline, so the final output can differ from pure or hybrid ImageSharp rendering. In the worker example below, you would also typically set `AbsoluteOriginPrefix` so the generated URL can point to your private origin without exposing it directly:
+
+```json
+"CloudflareImageUrlGenerator": {
+	"Enabled": true,
+	"UseImageSharpFallback": false
+}
+```
+#### Sign Cloudflare transformation URLs
+
+If you want to protect the public transformation URLs in the same spirit as ImageSharp's HMAC flow, enable signed URLs. By default the signature is long-lived and cache-friendly, so the URL can remain stable until you rotate the shared secret. This is the better fit when you want Cloudflare/CDN caching to work for as long as possible. If you want a shorter-lived token for tighter access control, set `SignedUrlTtlSeconds` to a positive value and the package will include an expiry timestamp as well.
+
+```json
+"CloudflareImageUrlGenerator": {
+  "Enabled": true,
+  "EnableSignedUrls": true,
+  "SignedUrlSecret": "replace-with-a-long-random-secret",
+  "SignedUrlQueryParameterName": "sig",
+  "SignedUrlExpiryQueryParameterName": "expires",
+  "SignedUrlTtlSeconds": 300
+}
+```
+#### Sample Cloudflare worker
+
+With the path prefix setting in place, you can also proxy the generated requests through a Cloudflare Worker. This is useful when you want to avoid exposing the private origin domain in the public URL and keep the generated URLs shorter and cleaner. In this worker-based setup, Cloudflare Image Resizing is optional: if the worker forwards the request to your own image pipeline or origin, you do not need Cloudflare Image Resizing enabled for the transformation step itself.
+
+> **Do not use `/cdn-cgi/` for a custom worker.** This path is reserved by Cloudflare for its own built-in features. If **Images → Transformations** (Image Resizing) is enabled on your zone, Cloudflare intercepts `/cdn-cgi/image/*` requests natively at the edge before your Worker route ever runs — your Worker's logs won't show anything, and any signed-URL checks are silently bypassed, even though the image still appears resized. Always set `CloudflarePathPrefix` (and the worker's `PUBLIC_PATH_PREFIX`) to a non-reserved path, such as `/cdn-mysite/image/`, when using a custom worker.
+
+Example:
+
+```text
+https://cf-images-demo.umbraco-images.dev/cdn-mysite/image/w=300,h=300,format=webp,fit=cover/media/sv3liij4/laura_weatherhead.jpg?v=1dd03c7e73f8bbe
+```
+
+The worker can receive that request, split the command segment from the source URL, and forward it to your image pipeline as a `cf.image` style request. A sample worker implementation is available in [worker-example.js](worker-example.js), which supports all of the generator's features:
+
+- **Path prefix parsing** — `PUBLIC_PATH_PREFIX` mirrors `CloudflarePathPrefix`. Set it to a non-reserved path (e.g. `cdn-mysite/image/`) rather than the package's default `cdn-cgi/image/`, which is only appropriate when relying on Cloudflare's native Image Resizing instead of a custom worker.
+- **Private origin proxying** — `PRIVATE_ORIGIN_BASE_URL` and `PRIVATE_ORIGIN_CONTAINER_PATH` map the public path to a private origin (e.g. blob storage), matching `AbsoluteOriginPrefix`.
+- **Signature-only mode** — leave `PRIVATE_ORIGIN_BASE_URL` empty (`""`) to have the worker fetch from the requesting host itself instead of a private origin. This is useful if you only want the worker to verify signed URLs (`EnableSignedUrls`) in front of Cloudflare Image Resizing on the same site, without proxying to a separate origin.
+- **Signed URL verification** — `ENABLE_SIGNED_URLS`, `SIGNED_URL_SECRET`, `SIGNED_URL_QUERY_PARAMETER_NAME`, `SIGNED_URL_EXPIRY_QUERY_PARAMETER_NAME` and `SIGNED_URL_TTL_SECONDS` mirror the `EnableSignedUrls`/`SignedUrlSecret`/`SignedUrlQueryParameterName`/`SignedUrlExpiryQueryParameterName`/`SignedUrlTtlSeconds` options above. `SIGNED_URL_SECRET` can also be supplied via the `SIGNED_URL_SECRET` environment variable/binding instead of hardcoding it in the worker source.
+
+For this worker example, your package configuration would look like this:
+
+```json
+"CloudflareImageUrlGenerator": {
+  "Enabled": true,
+  "CloudFlareSupportedImageFileTypes": ["webp", "avif", "jpg", "png"],
+  "UseImageSharpFallback": false,
+  "OffloadAllResizing": true,
+  "CloudflarePathPrefix": "/cdn-mysite/image/"
+}
+```
+
+## Usage Without Slimsy
+
+While the Cloudflare Image URL Generator works best with Slimsy for modern responsive image patterns, you can use it directly without Slimsy by calling `GetCropUrl()` directly in your Razor views or controllers.
+
+### Basic Usage with Format
+
+```csharp
+// In your Razor view - format triggers Cloudflare for resize and conversion
+var imageUrl = Url.GetCropUrl(mediaItem, 323, 300, furtherOptions: "format=webp", htmlEncode: false).ToString();
+<img src="@imageUrl" alt="Description" />
+```
+
+When you include a `format` parameter with a supported format (webp, avif, jpg, png), the Cloudflare Image URL Generator automatically handles the resizing and format conversion.
+
+## Understanding sourceWidth and sourceHeight
+
+### What Are They For?
+
+Umbraco stores crop coordinates as **fractions** (values between 0.0 and 1.0), for example:
+
+```
+crop.Left = 0.25, crop.Top = 0.1, crop.Right = 0.75, crop.Bottom = 0.9
+```
+
+Cloudflare's `trim` parameter requires **pixel values**, for example:
+
+```
+trim=120;600;1080;300
+```
+
+To convert from fractions to pixels, the generator needs to know the original image dimensions. This is what `sourceWidth` and `sourceHeight` provide. They must be passed alongside a predefined crop alias — without a crop alias, there are no fractional coordinates to convert.
+
+**With sourceWidth and sourceHeight (and a crop alias):**
+- Fractional crop coordinates are converted to pixels → Cloudflare handles the crop via `trim`
+- Full Cloudflare pipeline: crop + resize + format conversion
+
+**Without sourceWidth and sourceHeight:**
+- The `rxy` (fractional crop) parameter stays in the ImageSharp source URL
+- ImageSharp handles the crop on the source image
+- Cloudflare still handles format conversion and quality
+- The image is still cropped correctly, just by ImageSharp rather than Cloudflare
+
+### Secondary Use: Oversized Source Images
+
+`sourceWidth` and `sourceHeight` are also used to detect images over 100 megapixels (100,000,000 pixels). If a source image exceeds this threshold, the generator automatically pre-scales it via ImageSharp before sending it to Cloudflare, preventing processing failures on extremely large images.
+
+### Usage Without Slimsy — Crop Offloaded to Cloudflare
+
+Use named parameters to reach the overload that supports both `cropAlias` and `furtherOptions`. The `useCropDimensions: true` parameter tells `GetCropUrl` to use the output dimensions defined on the crop itself (e.g. 300×300 for a GlobalSquare crop).
+
+```csharp
+// Get the media item's actual dimensions so the fractional crop coordinates
+// can be converted to pixel values for Cloudflare's trim parameter
+var sourceWidth = mediaItem.Value<int>("umbracoWidth");
+var sourceHeight = mediaItem.Value<int>("umbracoHeight");
+
+var imageUrl = Url.GetCropUrl(
+    mediaItem,
+    cropAlias: "GlobalSquare",
+    useCropDimensions: true,
+    furtherOptions: $"sourceWidth={sourceWidth}&sourceHeight={sourceHeight}&format=webp",
+    htmlEncode: false
+).ToString();
+
+<img src="@imageUrl" alt="Description" />
+```
+
+### Usage Without Slimsy — Fallback (ImageSharp handles the crop)
+
+If you omit `sourceWidth` and `sourceHeight`, the crop stays in the ImageSharp source URL. This still produces the correct output but ImageSharp does the crop work instead of Cloudflare.
+
+```csharp
+// Without sourceWidth/sourceHeight the rxy crop parameter stays in the ImageSharp
+// source URL. ImageSharp handles the crop; Cloudflare handles format and quality.
+var imageUrl = Url.GetCropUrl(
+    mediaItem,
+    cropAlias: "GlobalSquare",
+    useCropDimensions: true,
+    furtherOptions: "format=webp",
+    htmlEncode: false
+).ToString();
+
+<img src="@imageUrl" alt="Description" />
+```
+
+### Usage With Slimsy (Automatic sourceWidth & sourceHeight)
+
+Slimsy v4.1+ can be configured to automatically add `sourceWidth` and `sourceHeight` to all generated URLs. This is the recommended approach when using Slimsy, as it ensures crops are always offloaded to Cloudflare without any manual work in your views.
+
+#### Configuration
+
+In your `appsettings.json`:
+
+```json
+"Slimsy": {
+  "AddSourceDimensions": true
+}
+```
+
+#### Usage
+
+Once configured, simply use Slimsy tag helpers as normal — `sourceWidth` and `sourceHeight` are added automatically from the media item's metadata:
+
+```html
+<!-- Slimsy automatically includes sourceWidth and sourceHeight, enabling Cloudflare crop offloading -->
+<slimsy-picture media-item="@person.Photo" width="323" height="300" format="webp"></slimsy-picture>
+
+<!-- Or with SlimsyService -->
+<img srcset="@SlimsyService.GetSrcSetUrls(person.Photo, 323, 300)" />
+```
