@@ -8,4 +8,5 @@
   <Project Path="src/CloudflareImageUrlGenerator.TestSite17/CloudflareImageUrlGenerator.TestSite17.csproj" />
   <Project Path="src/CloudflareImageUrlGenerator.TestSite18/CloudflareImageUrlGenerator.TestSite18.csproj" />
   <Project Path="src/CloudflareImageUrlGenerator/CloudflareImageUrlGenerator.csproj" />
+  <Project Path="src/CloudflareImageUrlGenerator.Tests/CloudflareImageUrlGenerator.Tests.csproj" />
 </Solution>
