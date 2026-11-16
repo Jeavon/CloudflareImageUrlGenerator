@@ -15,6 +15,7 @@ When implemented calls to GetCropUrl will generate Urls using this generator whe
 | `height` | `h` | |
 | `quality` | `quality` | ImageSharp source is set to `quality=100`; Cloudflare applies the requested quality |
 | `xy` (focal point) | `gravity` | Expressed as `{left}x{top}` fractions; only for `crop`/default mode |
+| `ranchor` (crop anchor) | `gravity` | `top`/`right`/`bottom`/`left`, or corners as `0x0`, `1x0`, `0x1`, `1x1`; only for `crop`/default mode and ignored when a focal point is set |
 | `rxy` (crop coordinates) | `trim` | Pixel-based `top;right;bottom;left` |
 | `autoOrient` | _(removed)_ | Cloudflare handles EXIF auto-orientation by default |
 | `rmode=crop` (default) | `fit=cover` | Crops to fill both dimensions |
