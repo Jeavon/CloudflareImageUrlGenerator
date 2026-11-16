@@ -27,7 +27,7 @@ namespace CloudflareImageUrlGenerator.Tests
                 configuration, cfOptions, authorization, middlewareOptions, Options.Create(new ImagingSettings()));
         }
 
-        private static string Generate(ImageCropMode? mode, ImageCropAnchor? anchor, ImageUrlGenerationOptions.FocalPointPosition? focalPoint = null)
+        private static string Generate(ImageCropMode? mode, ImageCropAnchor? anchor, ImageUrlGenerationOptions.FocalPointPosition? focalPoint = null, string furtherOptions = "")
         {
             var options = new ImageUrlGenerationOptions(Image)
             {
@@ -37,7 +37,7 @@ namespace CloudflareImageUrlGenerator.Tests
                 ImageCropAnchor = anchor,
                 FocalPoint = focalPoint,
                 Quality = 70,
-                FurtherOptions = "&format=webp",
+                FurtherOptions = "&format=webp" + furtherOptions,
             };
             return CreateGenerator().GetImageUrl(options)!;
         }
@@ -82,6 +82,55 @@ namespace CloudflareImageUrlGenerator.Tests
             var url = Generate(ImageCropMode.Crop, ImageCropAnchor.TopLeft, new ImageUrlGenerationOptions.FocalPointPosition(0.9m, 0.51m));
             Assert.Contains("gravity=0.9x0.51", url);
             Assert.DoesNotContain("gravity=0x0", url);
+        }
+
+        // Umbraco core drops ImageCropMode/ImageCropAnchor when the media has a cropper value, so Slimsy sends
+        // them as rmode/ranchor in the further options (the options then carry a null mode and anchor)
+        [Theory]
+        [InlineData("topleft", "gravity=0x0,")]
+        [InlineData("TopLeft", "gravity=0x0,")]
+        [InlineData("bottom", "gravity=bottom,")]
+        [InlineData("bottomright", "gravity=1x1,")]
+        public void Query_ranchor_is_mapped_to_gravity(string ranchor, string expected)
+        {
+            var url = Generate(null, null, furtherOptions: "&rmode=crop&ranchor=" + ranchor);
+            Assert.Contains(expected, url);
+            Assert.Contains("fit=cover", url);
+            Assert.DoesNotContain("ranchor", url);
+            Assert.DoesNotContain("rmode", url);
+        }
+
+        [Fact]
+        public void Query_ranchor_works_with_null_mode()
+        {
+            Assert.Contains("gravity=0x0,", Generate(null, null, furtherOptions: "&ranchor=topleft"));
+        }
+
+        [Fact]
+        public void Query_ranchor_beats_focal_point()
+        {
+            var url = Generate(null, null, new ImageUrlGenerationOptions.FocalPointPosition(0.9m, 0.51m), "&rmode=crop&ranchor=topleft");
+            Assert.Contains("gravity=0x0,", url);
+            Assert.DoesNotContain("0.9x0.51", url);
+            Assert.DoesNotContain("rxy", url);
+        }
+
+        [Fact]
+        public void Query_ranchor_center_leaves_focal_point_gravity()
+        {
+            var url = Generate(null, null, new ImageUrlGenerationOptions.FocalPointPosition(0.9m, 0.51m), "&ranchor=center");
+            Assert.Contains("gravity=0.9x0.51", url);
+        }
+
+        [Theory]
+        [InlineData("nonsense")]
+        [InlineData("42")]
+        [InlineData("")]
+        public void Unparseable_query_ranchor_is_ignored(string ranchor)
+        {
+            var url = Generate(null, null, furtherOptions: "&ranchor=" + ranchor);
+            Assert.DoesNotContain("gravity", url);
+            Assert.DoesNotContain("ranchor", url);
         }
 
         [Fact]

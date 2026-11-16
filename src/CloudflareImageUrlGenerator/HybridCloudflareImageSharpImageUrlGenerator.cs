@@ -155,9 +155,19 @@ namespace CloudflareImageUrlGenerator
 
                 if (options.ImageCropMode is null or ImageCropMode.Crop)
                 {
-                    // Remove mode and anchor — Cloudflare handles crop via cover fit + gravity
+                    // Remove mode and anchor — Cloudflare handles crop via cover fit + gravity.
+                    // Umbraco core never sets options.ImageCropAnchor for Crop mode when the media has a cropper value,
+                    // so callers (e.g. Slimsy) can pass the anchor as ranchor in the further options query instead.
                     imageSharpCommands.Remove(ResizeWebProcessor.Mode);
-                    imageSharpCommands.Remove(ResizeWebProcessor.Anchor);
+                    ImageCropAnchor? queryAnchor = null;
+                    // ranchor is only an explicit caller anchor when it did not come from options.ImageCropAnchor itself
+                    if (imageSharpCommands.Remove(ResizeWebProcessor.Anchor, out var ranchorValue) &&
+                        options.ImageCropAnchor is null &&
+                        Enum.TryParse<ImageCropAnchor>(ranchorValue.ToString(), true, out var parsedAnchor) &&
+                        Enum.IsDefined(parsedAnchor))
+                    {
+                        queryAnchor = parsedAnchor;
+                    }
 
                     if (imageSharpCommands.ContainsKey(ResizeWebProcessor.Width))
                     {
@@ -201,22 +211,35 @@ namespace CloudflareImageUrlGenerator
                         }
                     }
 
-                    if (options.FocalPoint is not null)
+                    // Gravity precedence: crop coordinates > ranchor in the query > media focal point > options.ImageCropAnchor
+                    string? gravity = null;
+                    if (options.Crop is null && queryAnchor is not null)
+                    {
+                        gravity = GetGravity(queryAnchor.Value);
+                        if (gravity is not null)
+                        {
+                            // The explicit anchor wins over the focal point
+                            imageSharpCommands.Remove(ResizeWebProcessor.Xy);
+                        }
+                    }
+
+                    if (gravity is null && options.FocalPoint is not null)
                     {
                         if (imageSharpCommands.Remove(ResizeWebProcessor.Xy))
                         {
-                            cfCommands.Add(CloudflareCommands.Gravity, FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}"));
+                            gravity = FormattableString.Invariant($"{options.FocalPoint.Left}x{options.FocalPoint.Top}");
                             addFit = true;
                         }
                     }
-                    else if (options.ImageCropAnchor is not null && !cfCommands.ContainsKey(CloudflareCommands.Gravity))
+                    else if (gravity is null && options.Crop is null && options.ImageCropAnchor is not null)
                     {
                         // No focal point: map the Umbraco crop anchor to a Cloudflare gravity (Center is Cloudflare's default)
-                        var gravity = GetGravity(options.ImageCropAnchor.Value);
-                        if (gravity is not null)
-                        {
-                            cfCommands.Add(CloudflareCommands.Gravity, gravity);
-                        }
+                        gravity = GetGravity(options.ImageCropAnchor.Value);
+                    }
+
+                    if (gravity is not null && addFit)
+                    {
+                        cfCommands.Add(CloudflareCommands.Gravity, gravity);
                     }
                 }
                 else if (options.ImageCropMode is ImageCropMode.Max)
