@@ -209,6 +209,15 @@ namespace CloudflareImageUrlGenerator
                             addFit = true;
                         }
                     }
+                    else if (options.ImageCropAnchor is not null && !cfCommands.ContainsKey(CloudflareCommands.Gravity))
+                    {
+                        // No focal point: map the Umbraco crop anchor to a Cloudflare gravity (Center is Cloudflare's default)
+                        var gravity = GetGravity(options.ImageCropAnchor.Value);
+                        if (gravity is not null)
+                        {
+                            cfCommands.Add(CloudflareCommands.Gravity, gravity);
+                        }
+                    }
                 }
                 else if (options.ImageCropMode is ImageCropMode.Max)
                 {
@@ -401,6 +410,20 @@ namespace CloudflareImageUrlGenerator
 
             return BuildCloudflareUrl(cloudflareBasePath + cloudflareUrlSuffix, sourceQueryParameters);
         }
+
+        // Cloudflare gravity: named sides, or XxY with 0x0 as the top left and 1x1 as the bottom right
+        private static string? GetGravity(ImageCropAnchor anchor) => anchor switch
+        {
+            ImageCropAnchor.Top => "top",
+            ImageCropAnchor.Right => "right",
+            ImageCropAnchor.Bottom => "bottom",
+            ImageCropAnchor.Left => "left",
+            ImageCropAnchor.TopLeft => "0x0",
+            ImageCropAnchor.TopRight => "1x0",
+            ImageCropAnchor.BottomLeft => "0x1",
+            ImageCropAnchor.BottomRight => "1x1",
+            _ => null
+        };
 
         private static string EnsureTrailingSlash(string value)
         {

@@ -181,11 +181,13 @@ export default {
       } else if (normalizedKey === "trim") {
         imageOptions.trim = value;
       } else if (normalizedKey === "gravity") {
-        const [x, y] = value.split('x', 2);
-        imageOptions.gravity = {
-          x: Number(x),
-          y: Number(y)
-        };
+        // Named gravities (left, right, top, bottom, auto, face) pass through as strings; XxY becomes {x, y}
+        if (/^\d*\.?\d+x\d*\.?\d+$/.test(value)) {
+          const [x, y] = value.split('x', 2);
+          imageOptions.gravity = { x: Number(x), y: Number(y) };
+        } else {
+          imageOptions.gravity = value;
+        }
       } else {
         imageOptions[normalizedKey] = value;
       }
