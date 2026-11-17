@@ -53,10 +53,10 @@ jobs:
           if [[ "$BRANCH_NAME" == hotfix/* ]] || [[ "$BRANCH_NAME" == feature/* ]]; then
             # Convert branch name to valid semver prerelease identifier
             # Prefix with "00-" to ensure these versions sort before alpha/beta/rc
-            # Truncate to max 15 chars total to keep NuGet paths short
+            # Truncate to keep NuGet paths short, and append a short hash of the full branch name so branches that only differ in punctuation stay distinct
             # Replace feature->ft and hotfix->hf to save more space
             # Trim trailing hyphen if present after truncation
-            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | sed 's/[^A-Za-z0-9-]/-/g' | cut -c 1-12 | sed 's/-$//')
+            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | sed 's/[^A-Za-z0-9-]/-/g' | cut -c 1-7 | sed 's/-$//')-$(printf '%s' "$BRANCH_NAME" | sha1sum | cut -c 1-4)
             PRERELEASE_ID="00-${BRANCH_SLUG}"
             echo "Branch slug: $BRANCH_SLUG"
             echo "Prerelease ID: $PRERELEASE_ID"
@@ -237,7 +237,7 @@ jobs:
           elif [ "$status" = "200" ]; then
             existing_commit=$(unzip -p existing.nupkg '*.nuspec' | sed -n 's:.*<repository [^>]*commit="\([0-9a-f]*\)".*:\1:p' | head -1)
             if [ "$existing_commit" != "$GITHUB_SHA" ]; then
-              echo "::error::$id $version is already on GitHub Packages, built from '$existing_commit' rather than $GITHUB_SHA. Refusing to publish and tag a different commit under the same version. Delete that package version (or release a new version) and re-run."
+              echo "::error::$id $version is already on GitHub Packages, built from '$existing_commit' rather than $GITHUB_SHA. Refusing to publish and tag a different commit under the same version. Release a new version instead (push a new commit): this version may also exist on other feeds from the earlier run, so deleting only the GitHub Packages copy is not safe."
               exit 1
             fi
             echo "$id $version already published from this commit, nothing to reconcile"
@@ -308,7 +308,7 @@ jobs:
         git fetch origin "$BRANCH_NAME"
         REMOTE_SHA=$(git rev-parse "origin/$BRANCH_NAME")
         if [ "$REMOTE_SHA" != "$GITHUB_SHA" ]; then
-          echo "::error::$BRANCH_NAME has advanced ($GITHUB_SHA -> $REMOTE_SHA) since this run started. Refusing to publish: the package was built from $GITHUB_SHA. Re-run the workflow on the new commit."
+          echo "::error::$BRANCH_NAME has advanced ($GITHUB_SHA -> $REMOTE_SHA) since this run started. Refusing to tag: the package was built from $GITHUB_SHA. If that package was already published, tag that commit manually (git tag v${SEMVER} $GITHUB_SHA && git push origin v${SEMVER}) and create the release from it; otherwise re-run on the new commit."
           exit 1
         fi
 
@@ -343,27 +343,30 @@ jobs:
           conventional-changelog-conventionalcommits@^9
 
     - name: Confirm tag and notes
+      id: confirm
       env:
         SEMANTIC_OUTCOME: ${{ steps.semantic.outcome }}
       run: |
-        git fetch --force --tags
-        TAG_SHA=$(git rev-parse -q --verify "refs/tags/v${SEMVER}^{commit}" || true)
+        # Check the tag on the remote itself: a tag created locally by a failed semantic-release push must not count.
+        TAG_SHA=$(git ls-remote origin "refs/tags/v${SEMVER}" "refs/tags/v${SEMVER}^{}" | tail -1 | cut -f1)
         if [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
-          echo "::error::semantic-release did not tag $GITHUB_SHA as v${SEMVER} (tag points at '${TAG_SHA}', semantic-release outcome: ${SEMANTIC_OUTCOME})."
+          echo "::error::The remote tag v${SEMVER} does not point at $GITHUB_SHA (remote tag commit: '${TAG_SHA}', semantic-release outcome: ${SEMANTIC_OUTCOME})."
           exit 1
         fi
-        echo "Tag v${SEMVER} points at $GITHUB_SHA"
+        echo "Remote tag v${SEMVER} points at $GITHUB_SHA"
 
         if [ "$SEMANTIC_OUTCOME" != "success" ]; then
           echo "::warning::semantic-release failed after creating tag v${SEMVER}; retrying the notes ref push."
+          pushed=false
           if git show-ref --verify -q "refs/notes/semantic-release-v${SEMVER}"; then
             for attempt in 1 2 3; do
-              git push origin "refs/notes/semantic-release-v${SEMVER}" && break
+              if git push origin "refs/notes/semantic-release-v${SEMVER}"; then pushed=true; break; fi
               echo "Notes push attempt $attempt failed"
               sleep $((attempt * 5))
-            done || true
-          else
-            echo "::warning::No local notes ref for v${SEMVER}; semantic-release channel notes were not written."
+            done
+          fi
+          if [ "$pushed" != "true" ]; then
+            echo "notes_failed=true" >> $GITHUB_OUTPUT
           fi
         fi
 
@@ -417,8 +420,9 @@ jobs:
         EOF
         fi
 
-        if [ -z "$RELEASE_NOTES" ]; then
-          # semantic-release did not complete, so it has no notes output: ask GitHub for them instead
+        # Stable releases always use GitHub's generated notes: semantic-release's default preset omits chore/ci/build/refactor
+        # commits that the analyzer still counts as releases. Also used when semantic-release produced no notes.
+        if [ -z "$RELEASE_NOTES" ] || [[ "$SEMVER" != *"-"* ]]; then
           PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^v${SEMVER}$" | head -n1 || true)
           if [ -n "$PREVIOUS_TAG" ]; then
             RELEASE_NOTES=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -F tag_name="v${SEMVER}" -F previous_tag_name="$PREVIOUS_TAG" --jq .body || true)
@@ -446,6 +450,12 @@ jobs:
     - name: Merge release branch to develop
       if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
       run: .github/scripts/merge-to-develop.sh "${{ needs.setup.outputs.semver }}"
+
+    - name: Fail if the notes ref was not persisted
+      if: ${{ steps.confirm.outputs.notes_failed == 'true' }}
+      run: |
+        echo "::error::The release v${SEMVER} was tagged, published and merged back, but refs/notes/semantic-release-v${SEMVER} could not be pushed. Repair it before the next release: git notes --ref=semantic-release-v${SEMVER} add -m '{\"channels\":[null]}' v${SEMVER} && git push origin refs/notes/semantic-release-v${SEMVER} (use the branch name instead of null for prerelease channels)."
+        exit 1
 
     - name: Write Summary
       run: |
