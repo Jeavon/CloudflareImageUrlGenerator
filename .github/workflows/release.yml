@@ -28,13 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write
-      pull-requests: write
-      packages: write
 
     outputs:
       semver: ${{ steps.semantic.outputs.new_release_version }}
       new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      last_release_version: ${{ steps.semantic.outputs.last_release_version }}
       prerelease_id: ${{ steps.calculate-branch.outputs.prerelease_id }}
 
     steps:
@@ -42,23 +40,24 @@ jobs:
         with:
           fetch-depth: 0
           filter: tree:0
-      
+
       - name: Fetch all tags
         run: git fetch --force --tags
 
       - name: Calculate Branch Slug
         id: calculate-branch
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: |
-          BRANCH_NAME="${{ github.ref_name }}"
           echo "Current branch: $BRANCH_NAME"
-          
+
           if [[ "$BRANCH_NAME" == hotfix/* ]] || [[ "$BRANCH_NAME" == feature/* ]]; then
             # Convert branch name to valid semver prerelease identifier
             # Prefix with "00-" to ensure these versions sort before alpha/beta/rc
-            # Truncate to max 15 chars total to keep NuGet paths short
+            # Truncate to keep NuGet paths short, and append a short hash of the full branch name so branches that only differ in punctuation stay distinct
             # Replace feature->ft and hotfix->hf to save more space
             # Trim trailing hyphen if present after truncation
-            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | cut -c 1-12 | sed 's/-$//')
+            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | sed 's/[^A-Za-z0-9-]/-/g' | cut -c 1-4 | sed 's/-$//')-$(printf '%s' "$BRANCH_NAME" | sha1sum | cut -c 1-8)
             PRERELEASE_ID="00-${BRANCH_SLUG}"
             echo "Branch slug: $BRANCH_SLUG"
             echo "Prerelease ID: $PRERELEASE_ID"
@@ -70,20 +69,20 @@ jobs:
 
       - name: Update .releaserc for current branch
         if: ${{ steps.calculate-branch.outputs.prerelease_id != '' }}
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          PRERELEASE_ID: ${{ steps.calculate-branch.outputs.prerelease_id }}
         run: |
-          BRANCH_NAME="${{ github.ref_name }}"
-          PRERELEASE_ID="${{ steps.calculate-branch.outputs.prerelease_id }}"
-          
           echo "Adding branch config: $BRANCH_NAME with prerelease: $PRERELEASE_ID"
-          
+
           # Read current .releaserc, add the branch entry, and save
           jq --arg name "$BRANCH_NAME" --arg prerelease "$PRERELEASE_ID" \
             '.branches += [{"name": $name, "prerelease": $prerelease}]' \
             .releaserc > .releaserc.tmp && mv .releaserc.tmp .releaserc
-          
+
           echo "Updated .releaserc:"
           cat .releaserc
-        
+
       - name: Semantic Release (Dry Run)
         id: semantic
         uses: cycjimmy/semantic-release-action@v6
@@ -95,7 +94,7 @@ jobs:
             @semantic-release/exec
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
-            conventional-changelog-conventionalcommits
+            conventional-changelog-conventionalcommits@^9
 
       - name: Check Release
         run: |
@@ -113,12 +112,14 @@ jobs:
           echo "New release patch: '${{ steps.semantic.outputs.new_release_patch_version }}'"
           echo "Last release version: '${{ steps.semantic.outputs.last_release_version }}'"
           echo "New release published: '${{ steps.semantic.outputs.new_release_published }}'"
-  
+
   build:
     name: Build and Package
     runs-on: ubuntu-latest
     needs: setup
-    timeout-minutes: 5
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v5
       with:
@@ -145,6 +146,12 @@ jobs:
         semver: ${{ needs.setup.outputs.semver }}
         path-to-extension: ${{ env.PATH_TO_EXTENSION }}
 
+    - name: Dotnet Format check
+      run: dotnet format --verify-no-changes --verbosity diagnostic
+
+    - name: Run Unit Tests
+      run: dotnet test src/CloudflareImageUrlGenerator.Tests/CloudflareImageUrlGenerator.Tests.csproj --configuration Release
+
     - name: Build slnx
       run: dotnet build ${{ github.workspace }}/*.slnx -c Release /maxcpucount:1
 
@@ -167,14 +174,32 @@ jobs:
     needs: [setup, build]
     timeout-minutes: 5
     permissions:
+      contents: read   # Required to check out the repo (a job-level permissions block resets unlisted scopes to none)
       id-token: write  # Required for NuGet trusted publishing (OIDC)
       packages: write  # Required for pushing to GitHub Packages
     env:
       MYGET_API_KEY: ${{ secrets.MYGET_API_KEY }}
     steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
     - uses: actions/setup-dotnet@v5
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    # Publish exactly the commit that was built. If the branch has moved on since this run started,
+    # fail rather than publishing packages that do not match what will be tagged.
+    - name: Verify branch has not advanced
+      env:
+        BRANCH_NAME: ${{ github.ref_name }}
+      run: |
+        git fetch origin "$BRANCH_NAME"
+        REMOTE_SHA=$(git rev-parse "origin/$BRANCH_NAME")
+        if [ "$REMOTE_SHA" != "$GITHUB_SHA" ]; then
+          echo "::error::$BRANCH_NAME has advanced ($GITHUB_SHA -> $REMOTE_SHA) since this run started. Refusing to publish: the package was built from $GITHUB_SHA. Re-run the workflow on the new commit."
+          exit 1
+        fi
 
     - name: Download NuGet Package
       uses: actions/download-artifact@v8
@@ -193,6 +218,36 @@ jobs:
       run: |
         export PATH="$HOME/.dotnet/tools:$PATH"
         dotnet validate package local nuget-packages/Umbraco.Community.CloudflareImageUrlGenerator.*.nupkg
+
+    # A run that fails after packages were pushed (or a branch that advances during the run) can leave a
+    # version on the feed that was built from a different commit. A retry can compute the same version from a
+    # newer commit, and --skip-duplicate would keep the old package while semantic-release tags the new commit.
+    # Refuse that: if the version already exists on GitHub Packages it must have been built from this commit.
+    - name: Reject an existing package version built from a different commit
+      if: ${{ needs.setup.outputs.new_release_published == 'true' }}
+      env:
+        GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        for pkg in nuget-packages/*.nupkg; do
+          nuspec=$(unzip -p "$pkg" '*.nuspec')
+          id=$(echo "$nuspec" | sed -n 's:.*<id>\(.*\)</id>.*:\1:p' | head -1 | tr '[:upper:]' '[:lower:]')
+          version=$(echo "$nuspec" | sed -n 's:.*<version>\(.*\)</version>.*:\1:p' | head -1 | tr '[:upper:]' '[:lower:]')
+          status=$(curl -s -o existing.nupkg -w '%{http_code}' -u "USERNAME:$GITHUB_PACKAGES_TOKEN" "https://nuget.pkg.github.com/Jeavon/download/$id/$version/$id.$version.nupkg")
+          if [ "$status" = "404" ]; then
+            echo "$id $version is not on GitHub Packages yet"
+          elif [ "$status" = "200" ]; then
+            existing_commit=$(unzip -p existing.nupkg '*.nuspec' | sed -n 's:.*<repository [^>]*commit="\([0-9a-f]*\)".*:\1:p' | head -1)
+            if [ "$existing_commit" != "$GITHUB_SHA" ]; then
+              echo "::error::$id $version is already on GitHub Packages, built from '$existing_commit' rather than $GITHUB_SHA. Refusing to publish and tag a different commit under the same version. Release a new version instead (push a new commit): this version may also exist on other feeds from the earlier run, so deleting only the GitHub Packages copy is not safe."
+              exit 1
+            fi
+            echo "$id $version already published from this commit, nothing to reconcile"
+          else
+            echo "::error::Could not check whether $id $version exists on GitHub Packages (HTTP $status)"
+            exit 1
+          fi
+          rm -f existing.nupkg
+        done
 
     - name: Add GitHub Packages Source
       if: ${{ needs.setup.outputs.new_release_published == 'true' }}
@@ -233,8 +288,8 @@ jobs:
     if: ${{ needs.setup.outputs.new_release_published == 'true' }}
     permissions:
       contents: write
-      issues: write
-      pull-requests: write
+    env:
+      SEMVER: ${{ needs.setup.outputs.semver }}
     steps:
     - uses: actions/checkout@v5
       with:
@@ -244,91 +299,39 @@ jobs:
     - name: Fetch all tags
       run: git fetch --force --tags
 
+    # Release exactly the commit that was built, tested and published. If the branch has moved on since this
+    # run started, fail rather than letting semantic-release analyse and tag commits that were never built
+    # (a newer feat or breaking commit could also change the computed version).
+    - name: Verify branch has not advanced
+      env:
+        BRANCH_NAME: ${{ github.ref_name }}
+      run: |
+        git fetch origin "$BRANCH_NAME"
+        REMOTE_SHA=$(git rev-parse "origin/$BRANCH_NAME")
+        if [ "$REMOTE_SHA" != "$GITHUB_SHA" ]; then
+          echo "::error::$BRANCH_NAME has advanced ($GITHUB_SHA -> $REMOTE_SHA) since this run started. Refusing to tag: the package was built from $GITHUB_SHA. If that package was already published, tag that commit manually (git tag v${SEMVER} $GITHUB_SHA && git push origin v${SEMVER}) and create the release from it; otherwise re-run on the new commit."
+          exit 1
+        fi
+
     - name: Update .releaserc for current branch
       if: ${{ needs.setup.outputs.prerelease_id != '' }}
+      env:
+        BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        PRERELEASE_ID: ${{ needs.setup.outputs.prerelease_id }}
       run: |
-        BRANCH_NAME="${{ github.ref_name }}"
-        PRERELEASE_ID="${{ needs.setup.outputs.prerelease_id }}"
-        
         echo "Adding branch config: $BRANCH_NAME with prerelease: $PRERELEASE_ID"
-        
+
         # Read current .releaserc, add the branch entry, and save
         jq --arg name "$BRANCH_NAME" --arg prerelease "$PRERELEASE_ID" \
           '.branches += [{"name": $name, "prerelease": $prerelease}]' \
           .releaserc > .releaserc.tmp && mv .releaserc.tmp .releaserc
-        
-        echo "Updated .releaserc:"
-        cat .releaserc
 
-    - name: Generate Release Notes Body
-      if: ${{ github.event.inputs.create_github_release != 'false' }}
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        BRANCH_NAME="${{ github.ref_name }}"
-        
-        # Check if this is a feature or hotfix branch test release
-        if [[ "$BRANCH_NAME" == hotfix/* ]] || [[ "$BRANCH_NAME" == feature/* ]]; then
-          echo "## ⚠️ Test Release from \`$BRANCH_NAME\`" > release_body.md
-          echo "" >> release_body.md
-          echo "This is a test release for development and testing purposes only." >> release_body.md
-          echo "" >> release_body.md
-          echo "### Installation" >> release_body.md
-          echo "" >> release_body.md
-          cat << 'EOF' >> release_body.md
-        ```bash
-        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${{ needs.setup.outputs.semver }} --source https://nuget.pkg.github.com/Jeavon/index.json
-        ```
-        EOF
-        # Check if publishing to nuget.org (stable release from main branch)
-        elif [[ "${{ github.event.inputs.publish_to_nuget }}" == "true" && "${{ needs.setup.outputs.semver }}" != *"-"* ]]; then
-          cat << 'EOF' > release_body.md
-        ## Installation
-        
-        ```bash
-        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${{ needs.setup.outputs.semver }}
-        ```
-        EOF
-          
-          echo "" >> release_body.md
-          echo "---" >> release_body.md
-          echo "" >> release_body.md
-          
-          # Get the previous stable tag for changelog comparison
-          CURRENT_TAG="v${{ needs.setup.outputs.semver }}"
-          LAST_NUGET_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^${CURRENT_TAG}$" | head -n1)
-          
-          if [[ -n "$LAST_NUGET_TAG" ]]; then
-            echo "## What's Changed (since $LAST_NUGET_TAG)" >> release_body.md
-            echo "" >> release_body.md
-            gh api repos/${{ github.repository }}/releases/generate-notes -F tag_name="v${{ needs.setup.outputs.semver }}" -F previous_tag_name="$LAST_NUGET_TAG" --jq .body | sed '/^## What'"'"'s Changed$/d' >> release_body.md
-          else
-            echo "## What's Changed" >> release_body.md
-            echo "" >> release_body.md
-            gh api repos/${{ github.repository }}/releases/generate-notes -F tag_name="v${{ needs.setup.outputs.semver }}" --jq .body | sed '/^## What'"'"'s Changed$/d' >> release_body.md
-          fi
-        else
-          # Pre-release - show alternative sources
-          echo "## Installation" > release_body.md
-          echo "" >> release_body.md
-          
-          cat << 'EOF' >> release_body.md
-        ### From MyGet (pre-release)
-        
-        ```bash
-        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${{ needs.setup.outputs.semver }} --source https://www.myget.org/F/umbraco-packages/api/v3/index.json
-        ```
-        
-        ### From GitHub Packages (pre-release)
-        
-        ```bash
-        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${{ needs.setup.outputs.semver }} --source https://nuget.pkg.github.com/Jeavon/index.json
-        ```
-        EOF
-        fi
-
+    # semantic-release pushes the tag first and its "notes" ref (refs/notes/semantic-release-v*) last. A transient
+    # GitHub rejection of that final push fails the step even though the tag exists, which previously skipped the
+    # GitHub Release and the merge back to develop. Tolerate the failure here and verify the tag explicitly below.
     - name: Semantic Release
       id: semantic
+      continue-on-error: true
       uses: cycjimmy/semantic-release-action@v6
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -338,26 +341,110 @@ jobs:
           @semantic-release/exec
           @semantic-release/commit-analyzer
           @semantic-release/release-notes-generator
-          conventional-changelog-conventionalcommits
+          conventional-changelog-conventionalcommits@^9
 
-    - name: Update GitHub Release with Custom Notes
-      if: ${{ steps.semantic.outputs.new_release_published == 'true' && github.event.inputs.create_github_release != 'false' }}
-      uses: softprops/action-gh-release@v3
-      with:
-        tag_name: v${{ needs.setup.outputs.semver }}
-        name: v${{ needs.setup.outputs.semver }}
-        body_path: release_body.md
-        prerelease: ${{ contains(needs.setup.outputs.semver, '-') }}
-
-    - name: Merge release branch to develop
-      if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-      run: .github/scripts/merge-to-develop.sh "${{ needs.setup.outputs.semver }}"
-
-    - name: Write Summary
+    - name: Confirm tag and notes
+      id: confirm
+      env:
+        SEMANTIC_OUTCOME: ${{ steps.semantic.outcome }}
       run: |
-        echo "## 🚀 Release Published: v${{ needs.setup.outputs.semver }}" >> $GITHUB_STEP_SUMMARY
-        echo "**Branch:** \`${GITHUB_REF#refs/heads/}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Tag:** \`v${{ needs.setup.outputs.semver }}\`" >> $GITHUB_STEP_SUMMARY
-        if [[ "${{ github.event.inputs.create_github_release }}" == "false" ]]; then
-          echo "**Note:** GitHub Release creation was skipped (create_github_release=false)" >> $GITHUB_STEP_SUMMARY
+        # Check the tag on the remote itself: a tag created locally by a failed semantic-release push must not count.
+        TAG_SHA=$(git ls-remote origin "refs/tags/v${SEMVER}" "refs/tags/v${SEMVER}^{}" | tail -1 | cut -f1)
+        if [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
+          echo "::error::The remote tag v${SEMVER} does not point at $GITHUB_SHA (remote tag commit: '${TAG_SHA}', semantic-release outcome: ${SEMANTIC_OUTCOME})."
+          exit 1
         fi
+        echo "Remote tag v${SEMVER} points at $GITHUB_SHA"
+
+        if [ "$SEMANTIC_OUTCOME" != "success" ]; then
+          echo "::warning::semantic-release failed after creating tag v${SEMVER}; retrying the notes ref push."
+          pushed=false
+          if git show-ref --verify -q "refs/notes/semantic-release-v${SEMVER}"; then
+            for attempt in 1 2 3; do
+              if git push origin "refs/notes/semantic-release-v${SEMVER}"; then pushed=true; break; fi
+              echo "Notes push attempt $attempt failed"
+              sleep $((attempt * 5))
+            done
+          fi
+          if [ "$pushed" != "true" ]; then
+            echo "notes_failed=true" >> $GITHUB_OUTPUT
+          fi
+        fi
+
+    # Reuses semantic-release's own generated notes when available, otherwise falls back to GitHub's generator.
+    - name: Generate Release Notes Body
+      if: ${{ github.event.inputs.create_github_release != 'false' }}
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        RELEASE_NOTES: ${{ steps.semantic.outputs.new_release_notes }}
+        PUBLISH_TO_NUGET: ${{ github.event.inputs.publish_to_nuget }}
+        LAST_RELEASE_VERSION: ${{ needs.setup.outputs.last_release_version }}
+      run: |
+        # Check if this is a feature or hotfix branch test release
+        if [[ "$BRANCH_NAME" == hotfix/* ]] || [[ "$BRANCH_NAME" == feature/* ]]; then
+          echo "## ⚠️ Test Release from \`$BRANCH_NAME\`" > release_body.md
+          echo "" >> release_body.md
+          echo "This is a test release for development and testing purposes only." >> release_body.md
+          echo "" >> release_body.md
+          echo "### Installation" >> release_body.md
+          echo "" >> release_body.md
+          cat << EOF >> release_body.md
+        \`\`\`bash
+        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${SEMVER} --source https://nuget.pkg.github.com/Jeavon/index.json
+        \`\`\`
+        EOF
+        # Check if publishing to nuget.org (stable release)
+        elif [[ "$PUBLISH_TO_NUGET" == "true" && "$SEMVER" != *"-"* ]]; then
+          cat << EOF > release_body.md
+        ## Installation
+
+        \`\`\`bash
+        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${SEMVER}
+        \`\`\`
+        EOF
+        else
+          # Pre-release - show alternative sources
+          cat << EOF > release_body.md
+        ## Installation
+
+        ### From MyGet (pre-release)
+
+        \`\`\`bash
+        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${SEMVER} --source https://www.myget.org/F/umbraco-packages/api/v3/index.json
+        \`\`\`
+
+        ### From GitHub Packages (pre-release)
+
+        \`\`\`bash
+        dotnet add package Umbraco.Community.CloudflareImageUrlGenerator --version ${SEMVER} --source https://nuget.pkg.github.com/Jeavon/index.json
+        \`\`\`
+        EOF
+        fi
+
+        # Stable releases always use GitHub's generated notes: semantic-release's default preset omits chore/ci/build/refactor
+        # commits that the analyzer still counts as releases. Also used when semantic-release produced no notes.
+        if [ -z "$RELEASE_NOTES" ] || [[ "$SEMVER" != *"-"* ]]; then
+          # Compare against the release semantic-release found as the previous one for this branch/channel
+          # (computed in setup), falling back to the latest stable tag only when that is unknown.
+          if [ -n "$LAST_RELEASE_VERSION" ]; then
+            PREVIOUS_TAG="v${LAST_RELEASE_VERSION}"
+          else
+            PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | grep -v "^v${SEMVER}$" | head -n1 || true)
+          fi
+          if [ -n "$PREVIOUS_TAG" ]; then
+            GENERATED=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -F tag_name="v${SEMVER}" -F previous_tag_name="$PREVIOUS_TAG" --jq .body || true)
+          else
+            GENERATED=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -F tag_name="v${SEMVER}" --jq .body || true)
+          fi
+          # Keep semantic-release's notes if GitHub's generator fails
+          if [ -n "$GENERATED" ]; then
+            RELEASE_NOTES="$GENERATED"
+          fi
+        fi
+
+        if [ -z "$RELEASE_NOTES" ]; then
+          echo "::warning::No release notes were generated by semantic-release or GitHub; the release body has the install instructions only."
+        fi
+
+
