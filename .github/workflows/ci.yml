@@ -58,7 +58,7 @@ jobs:
             # Truncate to keep NuGet paths short, and append a short hash of the full branch name so branches that only differ in punctuation stay distinct
             # Replace feature->ft and hotfix->hf to save more space
             # Trim trailing hyphen if present after truncation
-            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | sed 's/[^A-Za-z0-9-]/-/g' | cut -c 1-7 | sed 's/-$//')-$(printf '%s' "$BRANCH_NAME" | sha1sum | cut -c 1-4)
+            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | sed 's/[^A-Za-z0-9-]/-/g' | cut -c 1-4 | sed 's/-$//')-$(printf '%s' "$BRANCH_NAME" | sha1sum | cut -c 1-8)
             PRERELEASE_ID="00-${BRANCH_SLUG}"
             echo "Branch slug: $BRANCH_SLUG"
             echo "Prerelease ID: $PRERELEASE_ID"

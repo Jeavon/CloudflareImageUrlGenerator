@@ -32,6 +32,7 @@ jobs:
     outputs:
       semver: ${{ steps.semantic.outputs.new_release_version }}
       new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      last_release_version: ${{ steps.semantic.outputs.last_release_version }}
       prerelease_id: ${{ steps.calculate-branch.outputs.prerelease_id }}
 
     steps:
@@ -56,7 +57,7 @@ jobs:
             # Truncate to keep NuGet paths short, and append a short hash of the full branch name so branches that only differ in punctuation stay distinct
             # Replace feature->ft and hotfix->hf to save more space
             # Trim trailing hyphen if present after truncation
-            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | sed 's/[^A-Za-z0-9-]/-/g' | cut -c 1-7 | sed 's/-$//')-$(printf '%s' "$BRANCH_NAME" | sha1sum | cut -c 1-4)
+            BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/feature\//ft-/g; s/hotfix\//hf-/g; s/\//-/g' | sed 's/[^A-Za-z0-9-]/-/g' | cut -c 1-4 | sed 's/-$//')-$(printf '%s' "$BRANCH_NAME" | sha1sum | cut -c 1-8)
             PRERELEASE_ID="00-${BRANCH_SLUG}"
             echo "Branch slug: $BRANCH_SLUG"
             echo "Prerelease ID: $PRERELEASE_ID"
@@ -378,6 +379,7 @@ jobs:
         BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         RELEASE_NOTES: ${{ steps.semantic.outputs.new_release_notes }}
         PUBLISH_TO_NUGET: ${{ github.event.inputs.publish_to_nuget }}
+        LAST_RELEASE_VERSION: ${{ needs.setup.outputs.last_release_version }}
       run: |
         # Check if this is a feature or hotfix branch test release
         if [[ "$BRANCH_NAME" == hotfix/* ]] || [[ "$BRANCH_NAME" == feature/* ]]; then
@@ -423,45 +425,26 @@ jobs:
         # Stable releases always use GitHub's generated notes: semantic-release's default preset omits chore/ci/build/refactor
         # commits that the analyzer still counts as releases. Also used when semantic-release produced no notes.
         if [ -z "$RELEASE_NOTES" ] || [[ "$SEMVER" != *"-"* ]]; then
-          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^v${SEMVER}$" | head -n1 || true)
-          if [ -n "$PREVIOUS_TAG" ]; then
-            RELEASE_NOTES=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -F tag_name="v${SEMVER}" -F previous_tag_name="$PREVIOUS_TAG" --jq .body || true)
+          # Compare against the release semantic-release found as the previous one for this branch/channel
+          # (computed in setup), falling back to the latest stable tag only when that is unknown.
+          if [ -n "$LAST_RELEASE_VERSION" ]; then
+            PREVIOUS_TAG="v${LAST_RELEASE_VERSION}"
           else
-            RELEASE_NOTES=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -F tag_name="v${SEMVER}" --jq .body || true)
+            PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | grep -v "^v${SEMVER}$" | head -n1 || true)
+          fi
+          if [ -n "$PREVIOUS_TAG" ]; then
+            GENERATED=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -F tag_name="v${SEMVER}" -F previous_tag_name="$PREVIOUS_TAG" --jq .body || true)
+          else
+            GENERATED=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -F tag_name="v${SEMVER}" --jq .body || true)
+          fi
+          # Keep semantic-release's notes if GitHub's generator fails
+          if [ -n "$GENERATED" ]; then
+            RELEASE_NOTES="$GENERATED"
           fi
         fi
 
-        printf '\n---\n\n%s\n' "$RELEASE_NOTES" | sed '/^#\+ \[/d' >> release_body.md
-
-    - name: Update GitHub Release with Custom Notes
-      if: ${{ github.event.inputs.create_github_release != 'false' }}
-      uses: softprops/action-gh-release@v3
-      with:
-        tag_name: v${{ needs.setup.outputs.semver }}
-        name: v${{ needs.setup.outputs.semver }}
-        body_path: release_body.md
-        prerelease: ${{ contains(needs.setup.outputs.semver, '-') }}
-
-    - name: Make merge script executable
-      if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-      # Git doesn't reliably track the executable bit for files committed from Windows.
-      run: chmod +x .github/scripts/merge-to-develop.sh
-
-    - name: Merge release branch to develop
-      if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-      run: .github/scripts/merge-to-develop.sh "${{ needs.setup.outputs.semver }}"
-
-    - name: Fail if the notes ref was not persisted
-      if: ${{ steps.confirm.outputs.notes_failed == 'true' }}
-      run: |
-        echo "::error::The release v${SEMVER} was tagged, published and merged back, but refs/notes/semantic-release-v${SEMVER} could not be pushed. Repair it before the next release: git notes --ref=semantic-release-v${SEMVER} add -m '{\"channels\":[null]}' v${SEMVER} && git push origin refs/notes/semantic-release-v${SEMVER} (use the branch name instead of null for prerelease channels)."
-        exit 1
-
-    - name: Write Summary
-      run: |
-        echo "## 🚀 Release Published: v${{ needs.setup.outputs.semver }}" >> $GITHUB_STEP_SUMMARY
-        echo "**Branch:** \`${GITHUB_REF#refs/heads/}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Tag:** \`v${{ needs.setup.outputs.semver }}\`" >> $GITHUB_STEP_SUMMARY
-        if [[ "${{ github.event.inputs.create_github_release }}" == "false" ]]; then
-          echo "**Note:** GitHub Release creation was skipped (create_github_release=false)" >> $GITHUB_STEP_SUMMARY
+        if [ -z "$RELEASE_NOTES" ]; then
+          echo "::warning::No release notes were generated by semantic-release or GitHub; the release body has the install instructions only."
         fi
+
+
